@@ -29,51 +29,11 @@ Run any script without arguments to see available commands.
 <installation>
 Install the Google Cloud SDK (gcloud CLI) before any other operations.
 
-### macOS (Homebrew)
+**Installation:** Follow the official guide at https://cloud.google.com/sdk/docs/install
+
+**Verify:**
 ```bash
-brew install --cask google-cloud-sdk
-echo 'source "/opt/homebrew/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/path.zsh.inc"' >> ~/.zshrc
-echo 'source "/opt/homebrew/Caskroom/google-cloud-sdk/latest/google-cloud-sdk/completion.zsh.inc"' >> ~/.zshrc
-```
-
-### Linux (Debian/Ubuntu)
-```bash
-curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
-echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
-sudo apt-get update && sudo apt-get install -y google-cloud-sdk
-```
-
-### Linux (RHEL/CentOS/Fedora)
-```bash
-sudo tee /etc/yum.repos.d/google-cloud-sdk.repo << 'EOF'
-[google-cloud-cli]
-name=Google Cloud CLI
-baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el8-x86_64
-enabled=1
-gpgcheck=1
-gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-EOF
-sudo dnf install -y google-cloud-sdk
-```
-
-### Windows
-Download and run the installer from:
-https://cloud.google.com/sdk/docs/install#windows
-
-Or use Chocolatey:
-```powershell
-choco install gcloudsdk
-```
-
-### Verify Installation
-```bash
-gcloud version              # Show version info
-gcloud components list      # List installed components
-```
-
-### Update SDK
-```bash
-gcloud components update    # Update all components
+gcloud version
 ```
 
 </installation>
