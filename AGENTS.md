@@ -10,23 +10,17 @@ I am a personal assistant dedicated to writing and maintaining these skills. My 
 
 | Skill | Purpose | Prerequisites |
 |-------|---------|---------------|
-| `google-cloud-account` | GCP account setup: auth, billing, IAM, APIs, quotas | None |
-| `google-cloud-compute-ml` | Deploy and run ML models on GCP compute: GPU VMs, SSH, file transfer, Unsloth setup | `google-cloud-account` |
-| `container-engineering` | Build optimized, reproducible GPU containers for ML training | `google-cloud-account` |
+| `cloud-infrastructure-setup` | GCP infrastructure for ML: gcloud CLI, auth, projects, billing, APIs, IAM, env vars, cost controls, diagnostics | None |
+| `cloud-job-orchestration` | Vertex AI custom training jobs: submission, GPU selection, Spot VMs, monitoring, cost estimation | `cloud-infrastructure-setup` |
+| `google-cloud-compute-ml` | Deploy and run ML models on GCP compute: GPU VMs, SSH, file transfer, Unsloth setup | `cloud-infrastructure-setup` |
+| `container-engineering` | Build optimized, reproducible GPU containers for ML training | `cloud-infrastructure-setup` |
+| `cloud-storage-artifacts` | Manage ML artifacts on GCS: buckets, uploads, downloads, lifecycle, cleanup | `cloud-infrastructure-setup` |
 
 ## Repository Structure
 
 ```
 fine-tuning-skills/
 ├── AGENTS.md                    # This file - skill registry and conventions
-├── google-cloud-account/        # Skill: GCP account management
-│   ├── SKILL.md
-│   ├── reference.md
-│   └── scripts/
-│       ├── gcp_auth.sh
-│       ├── gcp_projects.sh
-│       ├── gcp_iam.sh
-│       └── gcp_diagnose.sh
 └── google-cloud-compute-ml/     # Skill: ML compute deployment
     ├── SKILL.md
     ├── reference.md
@@ -57,6 +51,50 @@ fine-tuning-skills/
         ├── build-and-push.sh    
         ├── test-container-locally.sh
         └── validate-cuda.sh
+└── cloud-infrastructure-setup/  # Skill: GCP infrastructure setup (merged with google-cloud-account)
+    ├── SKILL.md
+    ├── scripts/
+    │   ├── gcp_auth.sh          # Auth, ADC, service accounts, config profiles
+    │   ├── gcp_projects.sh      # Projects, billing, APIs, quotas, full setup
+    │   ├── gcp_iam.sh           # IAM roles, policy, custom roles, audit
+    │   ├── gcp_diagnose.sh      # Account health diagnostics
+    │   ├── setup-gcloud.sh      # One-shot gcloud install and setup
+    │   ├── enable-apis.sh       # Enable APIs by group
+    │   ├── check-permissions.sh # Verify permissions
+    │   ├── set-env.sh           # Env var template
+    │   ├── switch-config.sh     # Config switching
+    │   └── create-budget-alert.sh
+    └── references/
+        ├── gcloud-cheat-sheet.md
+        ├── iam-roles-reference.md
+        ├── cost-management-guide.md
+        ├── troubleshooting.md
+        └── documentation-links.md
+└── cloud-job-orchestration/     # Skill: Vertex AI job orchestration
+    ├── SKILL.md
+    ├── scripts/
+    │   ├── submit-training-job.py
+    │   ├── monitor-job.sh
+    │   ├── handle-preemption.sh
+    │   ├── cancel-job.sh
+    │   ├── cost-estimate.py
+    │   └── example-job-config.yaml
+    └── references/
+        ├── gpu-machine-types.md
+        ├── command-cheat-sheet.md
+        └── documentation-links.md
+└── cloud-storage-artifacts/      # Skill: GCS artifact management
+    ├── SKILL.md
+    ├── scripts/
+    │   ├── setup-bucket.sh
+    │   ├── upload-training-artifacts.sh
+    │   ├── download-model.sh
+    │   ├── cleanup-old-runs.sh
+    │   └── sync-directory.sh
+    └── references/
+        ├── cli-cheat-sheet.md
+        ├── storage-classes.md
+        └── documentation-links.md
 ```
 
 ## Skill Conventions

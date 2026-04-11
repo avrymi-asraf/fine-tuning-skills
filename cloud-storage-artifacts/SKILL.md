@@ -1,661 +1,258 @@
-# Cloud Storage & Artifact Management
-
-**Purpose:** Manage ML artifacts, checkpoints, and training outputs across cloud storage platforms (GCS, S3, Azure Blob).
-
-**Scope:**
-- Creating and configuring cloud storage buckets
-- Uploading/downloading ML artifacts
-- Organizing training outputs (checkpoints, models, logs)
-- Lifecycle policies and auto-cleanup
-- Local/cloud sync workflows
-- Bucket mounting in containers
-- Cost optimization strategies
-
+---
+name: cloud-storage-artifacts
+description: Manage ML artifacts on Google Cloud Storage — create buckets, upload/download models and checkpoints, set lifecycle policies, sync directories, and clean up old experiments. Use when the user needs to store, retrieve, organize, or manage ML training outputs in GCS, or when they mention buckets, checkpoints, artifact storage, storage classes, or cleanup.
 ---
 
-## Table of Contents
+<cloud-storage-artifacts>
+This skill covers managing ML training artifacts on Google Cloud Storage (GCS) — the storage layer in the GCP ML workflow.
 
-1. [Prerequisites](#prerequisites)
-2. [Quick Start](#quick-start)
-3. [Storage Fundamentals](#storage-fundamentals)
-4. [Bucket Organization for ML](#bucket-organization-for-ml)
-5. [CLI Tools](#cli-tools)
-6. [Lifecycle Management](#lifecycle-management)
-7. [Mounting Buckets](#mounting-buckets)
-8. [Cost Optimization](#cost-optimization)
-9. [Common Pitfalls](#common-pitfalls)
-10. [Scripts](#scripts)
-11. [References](#references)
+**What's covered:**
+- `<bucket-setup>` — Creating buckets with `setup-bucket.sh` and the default ML lifecycle policy
+- `<artifact-organization>` — Directory hierarchy and naming conventions for experiments, checkpoints, models
+- `<upload-and-download>` — Moving artifacts with `upload-training-artifacts.sh` and `download-model.sh`
+- `<lifecycle-and-tiering>` — Storage classes, lifecycle rules, automatic cost reduction
+- `<sync-and-cleanup>` — Keeping local/cloud in sync with `sync-directory.sh`, pruning old runs with `cleanup-old-runs.sh`
+- `<cost-optimization>` — Region selection, compression, class strategy
+- `<anti-patterns>` — Egress charges, early deletion fees, versioning bloat
 
----
+**Scripts:** `scripts/setup-bucket.sh`, `scripts/upload-training-artifacts.sh`, `scripts/download-model.sh`, `scripts/cleanup-old-runs.sh`, `scripts/sync-directory.sh`
+**References:** `references/cli-cheat-sheet.md` (gcloud storage commands), `references/storage-classes.md` (class comparison + ML recommendations), `references/documentation-links.md`
 
-## Prerequisites
+**Prerequisite:** `cloud-infrastructure-setup` skill (authenticated `gcloud` CLI with a project set).
+</cloud-storage-artifacts>
 
-### Required Tools
-
-**Google Cloud Storage:**
-```bash
-# Install gcloud CLI
-curl https://sdk.cloud.google.com | bash
-exec -l $SHELL
-
-# Initialize and authenticate
-gcloud init
-gcloud auth login
-gcloud auth application-default login
-```
-
-**AWS S3:**
-```bash
-# Install AWS CLI
-pip install awscli
-
-# Configure credentials
-aws configure
-```
-
-**Azure Blob:**
-```bash
-# Install Azure CLI
-curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-
-# Login
-az login
-```
-
-**GCS FUSE (for mounting):**
-```bash
-# Ubuntu/Debian
-echo "deb https://packages.cloud.google.com/apt gcsfuse-bionic main" | sudo tee /etc/apt/sources.list.d/gcsfuse.list
-curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-sudo apt-get update && sudo apt-get install gcsfuse
-
-# macOS (via Homebrew)
-brew install gcsfuse
-```
-
-### Authentication Setup
-
-**GCS Service Account:**
-```bash
-# Create service account for CI/CD
-gcloud iam service-accounts create storage-sa \
-    --display-name="Storage Service Account"
-
-# Grant storage roles
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:storage-sa@$PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/storage.objectAdmin"
-
-# Download key
-gcloud iam service-accounts keys create storage-sa-key.json \
-    --iam-account=storage-sa@$PROJECT_ID.iam.gserviceaccount.com
-
-export GOOGLE_APPLICATION_CREDENTIALS="$PWD/storage-sa-key.json"
-```
-
----
-
-## Quick Start
+<bucket-setup>
+Use `scripts/setup-bucket.sh` to create a bucket. Run without arguments to see usage.
 
 ```bash
-# Create a bucket for ML artifacts
-gcloud storage buckets create gs://my-project-ml-artifacts \
-    --location=us-central1 \
-    --default-storage-class=STANDARD \
-    --uniform-bucket-level-access
-
-# Upload training artifacts
-gcloud storage cp -r ./outputs/ gs://my-project-ml-artifacts/experiments/run-001/
-
-# Download model checkpoint
-gcloud storage cp gs://my-project-ml-artifacts/experiments/run-001/checkpoint-final.pt ./
-
-# Sync local directory with cloud
-gcloud storage rsync -r ./logs/ gs://my-project-ml-artifacts/logs/
+./scripts/setup-bucket.sh my-project-ml-artifacts --location=us-central1
+./scripts/setup-bucket.sh my-project-ml-artifacts --location=us-central1 --versioning --no-lifecycle
 ```
 
----
+The script creates the bucket with uniform bucket-level access and applies a default ML lifecycle policy:
 
-## Storage Fundamentals
+| Prefix | Rule | Rationale |
+|--------|------|-----------|
+| `checkpoints/temp/`, `experiments/temp/` | Delete after 7 days | Scratch data |
+| `checkpoints/` | → NEARLINE after 30 days | Infrequent rollback |
+| `experiments/` | → COLDLINE after 90 days | Archived runs |
+| `logs/` | Delete after 365 days | Old telemetry |
 
-### Storage Class Comparison
+Use `--no-lifecycle` to skip the policy and configure manually. To inspect or clear:
+```bash
+gcloud storage buckets describe gs://BUCKET --format="value(lifecycle_config)"
+gcloud storage buckets update gs://BUCKET --clear-lifecycle
+```
 
-| Class | Access Frequency | Min Storage | Retrieval Fee | Best For |
-|-------|-----------------|-------------|---------------|----------|
-| **STANDARD** | Frequent | None | None | Active training data, recent checkpoints |
-| **NEARLINE** | <1x/month | 30 days | Low | Model registry, previous experiments |
-| **COLDLINE** | <1x/quarter | 90 days | Medium | Archived experiments, old logs |
-| **ARCHIVE** | <1x/year | 365 days | High | Long-term compliance, final models |
-| **AUTOMATIC** | Varies | None | None | ML workloads with varying access |
+**Region matters:** Always create the bucket in the same region as your compute (e.g. `us-central1` for Vertex AI). Cross-region egress is billed; same-region is free.
+</bucket-setup>
 
-**Notes:**
-- **Early deletion fees** apply if you delete before minimum storage duration
-- **Retrieval fees** apply when accessing non-STANDARD classes
-- **AUTOMATIC** class uses ML to optimize placement (GCS only)
-
-### Multi-Cloud Comparison
-
-| Feature | GCS | S3 | Azure Blob |
-|---------|-----|-----|------------|
-| Standard | STANDARD | S3 Standard | Hot |
-| Infrequent | NEARLINE | S3 Standard-IA | Cool |
-| Archive | COLDLINE/ARCHIVE | S3 Glacier | Archive |
-| Auto-tiering | AUTOMATIC | S3 Intelligent-Tiering | Cool Tiers |
-| FUSE mounting | GCS FUSE | s3fs | blobfuse2 |
-
----
-
-## Bucket Organization for ML
-
-### Recommended Hierarchy
+<artifact-organization>
+Recommended directory structure inside the bucket:
 
 ```
-ml-artifacts-bucket/
+gs://my-project-ml-artifacts/
 ├── datasets/
-│   ├── raw/
-│   │   ├── dataset-a/
-│   │   └── dataset-b/
-│   └── processed/
-│       ├── dataset-a/v1.0/
-│       └── dataset-b/v1.0/
+│   ├── raw/dataset-a/
+│   └── processed/dataset-a/v1.0/
+├── experiments/
+│   └── 2024-01-15-llama-7b-lora/
+│       ├── config.yaml
+│       ├── checkpoints/
+│       │   ├── checkpoint-1000.pt
+│       │   └── checkpoint-final.pt
+│       ├── metrics.json
+│       └── logs/
 ├── models/
-│   ├── registry/
-│   │   ├── model-a/v1.0/
-│   │   ├── model-a/v1.1/
-│   │   └── model-b/v2.0/
-│   └── experiments/
-│       ├── 2024-01-15-experiment-name/
-│       │   ├── config.yaml
-│       │   ├── checkpoints/
-│       │   │   ├── checkpoint-1000.pt
-│       │   │   └── checkpoint-2000.pt
-│       │   ├── final/
-│       │   │   ├── model.pt
-│   │   │   │   └── tokenizer.json
-│   │   │   └── metrics.json
-│   │   └── logs/
-│   └── └── 2024-01-16-another-experiment/
+│   ├── llama-7b-v1.0/
+│   └── llama-7b-v1.1-finetuned/
 ├── checkpoints/
-│   ├── temporary/          # Short-lived, auto-deleted
-│   └── important/          # Keep longer
+│   └── temp/                    # Auto-deleted by lifecycle
 └── logs/
-    ├── tensorboard/
-    └── training/
+    └── tensorboard/
 ```
 
-### Naming Conventions
+**Naming conventions:**
+- Experiments: `YYYY-MM-DD-descriptive-name`
+- Checkpoints: `checkpoint-{step}.pt`
+- Models: `model-name-v{version}` or `model-name-v{version}-qualifier`
+
+The hierarchy aligns with the lifecycle policy — `checkpoints/temp/` gets cleaned automatically, `experiments/` transitions to cheaper storage.
+</artifact-organization>
+
+<upload-and-download>
+## Upload
+
+Use `scripts/upload-training-artifacts.sh`. Automatically tags objects with git commit, branch, timestamp, and hostname as GCS custom metadata.
 
 ```bash
-# Experiment folders: YYYY-MM-DD-descriptive-name
-gs://bucket/experiments/2024-01-15-llama-7b-fine-tune/
-gs://bucket/experiments/2024-01-16-llama-7b-lora-4bit/
-
-# Checkpoints: checkpoint-{step}.ext
-checkpoint-1000.pt
-checkpoint-2000.pt
-checkpoint-final.pt
-
-# Models: model-{version}-{qualifier}
-model-v1.0-base.pt
-model-v1.1-finetuned.pt
-model-v2.0-merged.pt
-
-# Configs: Include timestamp/hash
-config-20240115-abc123.yaml
+./scripts/upload-training-artifacts.sh ./outputs gs://bucket/experiments/run-001
+./scripts/upload-training-artifacts.sh --compress ./model gs://bucket/models/v1.0.tar.gz
+./scripts/upload-training-artifacts.sh --storage-class=NEARLINE ./old-data gs://bucket/archive/
 ```
 
----
+For manual single-file uploads:
+```bash
+gcloud storage cp model.pt gs://bucket/models/
+gcloud storage cp -r ./experiment-dir/ gs://bucket/experiments/run-001/
+```
 
-## CLI Tools
+## Download
 
-### GCS: gcloud storage (Recommended)
-
-Google's modern CLI - faster than gsutil with better UX.
+Use `scripts/download-model.sh`. Supports checksum verification and archive extraction.
 
 ```bash
-# Buckets
-gcloud storage buckets create gs://BUCKET_NAME --location=us-central1
-gcloud storage buckets list
-gcloud storage buckets describe gs://BUCKET_NAME
-gcloud storage buckets delete gs://BUCKET_NAME
-
-# Objects
-gcloud storage cp local.file gs://bucket/path/
-gcloud storage cp gs://bucket/file local.file
-gcloud storage cp -r local-dir/ gs://bucket/path/
-gcloud storage mv gs://bucket/old gs://bucket/new
-gcloud storage rm gs://bucket/file
-gcloud storage rm -r gs://bucket/dir/
-
-# Sync (rsync)
-gcloud storage rsync -r local-dir/ gs://bucket/dir/
-gcloud storage rsync -r gs://bucket/dir/ local-dir/
-
-# List with details
-gcloud storage ls -l gs://bucket/
-gcloud storage ls -r gs://bucket/  # Recursive
-
-# Copy between buckets
-gcloud storage cp gs://src-bucket/file gs://dst-bucket/file
-
-# Streaming
-cat data.txt | gcloud storage cp - gs://bucket/data.txt
-gcloud storage cp gs://bucket/data.txt - | wc -l
+./scripts/download-model.sh gs://bucket/models/llama-7b ./models/llama-7b
+./scripts/download-model.sh --verify --checksum=abc123def456 gs://bucket/model.pt ./model.pt
+./scripts/download-model.sh --extract gs://bucket/models/archive.tar.gz ./models/
 ```
 
-### GCS: gsutil (Legacy)
-
-Still widely used but being deprecated.
-
+For quick manual downloads:
 ```bash
-# Same commands, different syntax
-gsutil mb -l us-central1 gs://bucket
-gsutil ls -L gs://bucket
-gsutil cp -r local/ gs://bucket/
-gsutil rm -r gs://bucket/dir/
-
-# Parallel uploads (gsutil advantage)
-gsutil -m cp -r local/ gs://bucket/  # -m = multi-threaded
-
-# Set metadata
-gsutil setmeta -h "Content-Type:application/json" gs://bucket/file
-
-# ACL management
-gsutil acl ch -u user@example.com:R gs://bucket/file
+gcloud storage cp gs://bucket/models/model.pt ./
+gcloud storage cp -r gs://bucket/experiments/run-001/ ./local-run/
 ```
+</upload-and-download>
 
-### AWS S3
+<lifecycle-and-tiering>
+GCS storage classes trade access cost for storage cost. Use the right class for each data stage:
 
-```bash
-# Buckets
-aws s3 mb s3://bucket-name --region us-east-1
-aws s3 ls
-aws s3 rb s3://bucket-name
+| Class | Access Pattern | Min Duration | Best For |
+|-------|---------------|--------------|----------|
+| STANDARD | Frequent | None | Active training data, recent checkpoints |
+| NEARLINE | < 1×/month | 30 days | Previous experiments, model registry |
+| COLDLINE | < 1×/quarter | 90 days | Archived experiments, old logs |
+| ARCHIVE | < 1×/year | 365 days | Compliance, final model backups |
 
-# Objects
-aws s3 cp local.file s3://bucket/path/
-aws s3 cp s3://bucket/file local.file
-aws s3 cp -r local-dir/ s3://bucket/path/
-aws s3 mv s3://bucket/old s3://bucket/new
-aws s3 rm s3://bucket/file
-aws s3 rm --recursive s3://bucket/dir/
+**Early deletion fees** apply if you delete an object before its minimum duration expires. Don't put short-lived data in NEARLINE — use STANDARD and let lifecycle rules transition it.
 
-# Sync
-aws s3 sync local-dir/ s3://bucket/dir/
-aws s3 sync s3://bucket/dir/ local-dir/
-
-# Presigned URLs
-aws s3 presign s3://bucket/file --expires-in 3600
-```
-
-### Azure Blob
-
-```bash
-# Containers
-az storage container create --name container --account-name mystorage
-az storage container list --account-name mystorage
-
-# Blobs
-az storage blob upload --container container --file local.file --name path/file
-az storage blob download --container container --name path/file --file local.file
-az storage blob delete --container container --name path/file
-
-# Sync
-az storage blob sync --container container --source local-dir/
-
-# List
-az storage blob list --container container --output table
-```
-
----
-
-## Lifecycle Management
-
-### GCS Lifecycle Policies
-
-Create `lifecycle.json`:
+Custom lifecycle policy example (create as JSON, apply with `gcloud`):
 ```json
 {
   "lifecycle": {
     "rule": [
       {
-        "action": {"type": "Delete"},
-        "condition": {
-          "age": 30,
-          "matchesPrefix": ["experiments/temp/"]
-        }
-      },
-      {
         "action": {"type": "SetStorageClass", "storageClass": "NEARLINE"},
-        "condition": {
-          "age": 7,
-          "matchesPrefix": ["checkpoints/"],
-          "numNewerVersions": 3
-        }
-      },
-      {
-        "action": {"type": "SetStorageClass", "storageClass": "COLDLINE"},
-        "condition": {
-          "age": 90,
-          "matchesPrefix": ["experiments/"]
-        }
-      },
-      {
-        "action": {"type": "Delete"},
-        "condition": {
-          "age": 365,
-          "matchesPrefix": ["logs/"]
-        }
+        "condition": {"age": 14, "matchesPrefix": ["checkpoints/"]}
       }
     ]
   }
 }
 ```
-
-Apply:
 ```bash
-gcloud storage buckets update gs://bucket --lifecycle-file=lifecycle.json
-
-# View current policy
-gcloud storage buckets describe gs://bucket --format="value(lifecycle_config)"
-
-# Clear all rules
-gcloud storage buckets update gs://bucket --clear-lifecycle
+gcloud storage buckets update gs://BUCKET --lifecycle-file=policy.json
 ```
 
-### S3 Lifecycle Policies
+Full storage class details including cross-provider comparison: `references/storage-classes.md`.
+</lifecycle-and-tiering>
 
-```json
-{
-  "Rules": [
-    {
-      "ID": "DeleteTempCheckpoints",
-      "Status": "Enabled",
-      "Filter": {
-        "Prefix": "checkpoints/temp/"
-      },
-      "Expiration": {
-        "Days": 7
-      }
-    },
-    {
-      "ID": "TransitionToIA",
-      "Status": "Enabled",
-      "Filter": {
-        "Prefix": "experiments/"
-      },
-      "Transitions": [
-        {
-          "Days": 30,
-          "StorageClass": "STANDARD_IA"
-        },
-        {
-          "Days": 90,
-          "StorageClass": "GLACIER"
-        }
-      ]
-    }
-  ]
-}
-```
+<sync-and-cleanup>
+## Sync
 
-Apply:
-```bash
-aws s3api put-bucket-lifecycle-configuration \
-    --bucket my-bucket \
-    --lifecycle-configuration file://lifecycle.json
-```
-
-### Azure Lifecycle Management
-
-```json
-{
-  "rules": [
-    {
-      "name": "deleteOldLogs",
-      "enabled": true,
-      "type": "Lifecycle",
-      "definition": {
-        "filters": {
-          "blobTypes": ["blockBlob"],
-          "prefixMatch": ["logs/"]
-        },
-        "actions": {
-          "baseBlob": {
-            "delete": { "daysAfterModificationGreaterThan": 365 }
-          }
-        }
-      }
-    }
-  ]
-}
-```
-
-Apply:
-```bash
-az storage account management-policy create \
-    --account-name mystorage \
-    --policy @lifecycle.json
-```
-
----
-
-## Mounting Buckets
-
-### GCS FUSE
-
-**Local Mount:**
-```bash
-# Create mount point
-mkdir -p ~/gcs/bucket-name
-
-# Mount (read-write)
-gcsfuse bucket-name ~/gcs/bucket-name
-
-# Mount read-only
-gcsfuse -o ro bucket-name ~/gcs/bucket-name
-
-# Mount with specific permissions
-gcsfuse --file-mode=755 --dir-mode=755 bucket-name ~/gcs/bucket-name
-
-# Unmount
-fusermount -u ~/gcs/bucket-name  # Linux
-umount ~/gcs/bucket-name          # macOS
-```
-
-**Docker Mount:**
-```dockerfile
-FROM python:3.11
-
-# Install GCS FUSE
-RUN apt-get update && apt-get install -y \
-    curl gnupg lsb-release fuse \
-    && gcsfuse_repo=gcsfuse-$(lsb_release -c -s) \
-    && echo "deb https://packages.cloud.google.com/apt $gcsfuse_repo main" | tee /etc/apt/sources.list.d/gcsfuse.list \
-    && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
-    && apt-get update && apt-get install -y gcsfuse
-
-# Mount point
-RUN mkdir -p /gcs/models
-
-# Entrypoint script mounts and runs
-COPY entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-```
+Use `scripts/sync-directory.sh` — a thin wrapper around `gcloud storage rsync`:
 
 ```bash
-# entrypoint.sh
-#!/bin/bash
-gcsfuse --foreground --key-file=/secrets/key.json \
-    ${GCS_BUCKET} /gcs/models &
-sleep 2  # Wait for mount
-exec "$@"
+./scripts/sync-directory.sh ./outputs gs://bucket/outputs
+./scripts/sync-directory.sh gs://bucket/checkpoints ./local-checkpoints
+./scripts/sync-directory.sh --delete ./data gs://bucket/data       # mirror: delete extras at dest
+./scripts/sync-directory.sh --exclude="*.tmp" ./logs gs://bucket/logs
 ```
 
-**Kubernetes (GKE):**
-```yaml
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: training
-    image: gcr.io/project/training:latest
-    volumeMounts:
-    - name: gcs-volume
-      mountPath: /gcs/data
-  volumes:
-  - name: gcs-volume
-    csi:
-      driver: gcsfuse.csi.storage.gke.io
-      volumeAttributes:
-        bucketName: my-bucket
-        mountOptions: "implicit-dirs,file-mode=755,dir-mode=755"
-```
+## Cleanup
 
-### S3 FUSE (s3fs)
+Use `scripts/cleanup-old-runs.sh` to prune old experiment directories:
 
 ```bash
-# Install
-sudo apt-get install s3fs
-
-# Credentials
-echo ACCESS_KEY_ID:SECRET_KEY > ~/.passwd-s3fs
-chmod 600 ~/.passwd-s3fs
-
-# Mount
-mkdir -p ~/s3/bucket
-s3fs my-bucket ~/s3/bucket -o passwd_file=~/.passwd-s3fs
-
-# Unmount
-fusermount -u ~/s3/bucket
+./scripts/cleanup-old-runs.sh gs://bucket/experiments --older-than=30d --dry-run
+./scripts/cleanup-old-runs.sh gs://bucket/experiments --keep-last=5
+./scripts/cleanup-old-runs.sh gs://bucket/checkpoints --older-than=7d --yes
 ```
 
-### Azure Blob FUSE (blobfuse2)
+Always use `--dry-run` first. The script lists directories, checks timestamps, and requires explicit `yes` confirmation before deletion.
+</sync-and-cleanup>
 
+<cost-optimization>
+1. **Same-region storage** — bucket and compute in the same region. Cross-region egress costs ~$0.08–0.12/GB.
+2. **Lifecycle policies** — let `setup-bucket.sh` default policy auto-transition old data to cheaper classes.
+3. **Compress before upload** — use `--compress` flag on `upload-training-artifacts.sh`, or manually: `tar -czf - dir/ | gcloud storage cp - gs://bucket/archive.tar.gz`
+4. **Clean up failed runs** — delete checkpoints from crashed experiments immediately; don't let them age into NEARLINE (where early deletion fees apply).
+5. **Check bucket size** — `gcloud storage du -sh gs://bucket/` or `gcloud storage ls -r -l gs://bucket/ | tail -1`
+
+**Cost reference:** STANDARD ~$0.020/GB/month, NEARLINE ~$0.010, COLDLINE ~$0.004, ARCHIVE ~$0.0012. Full tables in `references/storage-classes.md`.
+</cost-optimization>
+
+<anti-patterns>
+- **Cross-region egress** — Downloading data to a different region costs money. Keep compute and storage co-located.
+- **Early deletion fees** — Deleting NEARLINE objects before 30 days costs the prorated remainder. Use STANDARD for short-lived data.
+- **Versioning bloat** — Enabling versioning without a cleanup rule causes unbounded growth. If versioning is on, add a lifecycle rule: `{"action":{"type":"Delete"},"condition":{"numNewerVersions":3}}`.
+- **Listing huge directories** — `gcloud storage ls gs://bucket/` on 1M+ objects is slow. Always use a prefix: `gcloud storage ls gs://bucket/experiments/2024-01/`.
+- **Silent upload failures** — Script continues after `gcloud storage cp` fails. All scripts use `set -euo pipefail` to prevent this.
+- **Hardcoded bucket names** — Pass bucket names as arguments or env vars. Never embed them in scripts.
+</anti-patterns>
+
+<cloud-storage-scripts>
+All scripts show usage when run without arguments.
+
+| Script | Purpose |
+|--------|---------|
+| `setup-bucket.sh` | Create bucket with ML lifecycle policy |
+| `upload-training-artifacts.sh` | Upload with metadata tagging and optional compression |
+| `download-model.sh` | Download with optional checksum verification and extraction |
+| `cleanup-old-runs.sh` | Delete old experiment directories by age or count |
+| `sync-directory.sh` | Sync local ↔ GCS directories |
+</cloud-storage-scripts>
+
+<cloud-storage-reference>
+| File | Contents |
+|------|----------|
+| `references/cli-cheat-sheet.md` | Quick-reference gcloud storage and gsutil commands |
+| `references/storage-classes.md` | Storage class comparison, ML workload recommendations, cost tables |
+| `references/documentation-links.md` | Official GCS documentation and ML storage architecture links |
+</cloud-storage-reference>
+
+<examples>
+**Scenario:** Set up artifact storage for a new fine-tuning project, run an experiment, then clean up.
+
+**Step 1 — Create bucket:**
 ```bash
-# Install
-wget https://github.com/Azure/azure-storage-fuse/releases/download/blobfuse2-2.2.1/blobfuse2-2.2.1-Debian-11.0.x86_64.deb
-sudo dpkg -i blobfuse2-2.2.1-Debian-11.0.x86_64.deb
-
-# Config file
-mkdir -p ~/.blobfuse2
+./scripts/setup-bucket.sh my-llama-training --location=us-central1
+# Creates gs://my-llama-training with default lifecycle policy
 ```
 
----
-
-## Cost Optimization
-
-### Strategies for ML Workloads
-
-1. **Tiered Storage by Age**
-   - Recent checkpoints → STANDARD
-   - Week-old checkpoints → NEARLINE/S3 IA
-   - Month-old artifacts → COLDLINE/Glacier
-   - Final models → Keep in STANDARD (if accessed)
-
-2. **Clean Up Temp Files**
-   - Delete failed experiment checkpoints immediately
-   - Auto-delete `/temp/` and `/scratch/` prefixes
-
-3. **Compression**
-   ```bash
-   # Compress before upload
-   tar -czf - model_dir/ | gcloud storage cp - gs://bucket/model.tar.gz
-   
-   # Upload with gzip
-   gcloud storage cp -Z large_file.json gs://bucket/  # -Z = gzip
-   ```
-
-4. **Regional Selection**
-   - Use same region as compute to avoid egress
-   - Multi-region only if needed for availability
-
-5. **Object Size Optimization**
-   - GCS: Use composite uploads for >150MB
-   - S3: Multipart upload for >100MB
-   - Azure: Block blob for large files
-
-### Cost Estimation
-
+**Step 2 — Upload training data:**
 ```bash
-# GCS: Get bucket size
-gsutil du -sh gs://bucket
-
-# S3: Get bucket size
-aws s3 ls s3://bucket --recursive --human-readable --summarize
-
-# Azure: Get container size
-az storage blob list --container container --query "[].properties.contentLength" | jq add
+./scripts/upload-training-artifacts.sh ./prepared-data gs://my-llama-training/datasets/processed/alpaca-v1/
 ```
 
----
-
-## Common Pitfalls
-
-### 1. Egress Charges
-**Problem:** Downloading data to different region/Internet costs $$  
-**Solution:** Keep compute and storage in same region
-
-### 2. Early Deletion Fees
-**Problem:** Deleting NEARLINE objects before 30 days  
-**Fix:** Use STANDARD for short-lived data, transition only after 30 days
-
-### 3. Versioning Bloat
-**Problem:** Enabled versioning, costs balloon  
+**Step 3 — After training, upload results:**
 ```bash
-# Check if versioning is on
-gcloud storage buckets describe gs://bucket --format="value(versioning.enabled)"
-
-# Set lifecycle to clean old versions
-{
-  "action": {"type": "Delete"},
-  "condition": {"numNewerVersions": 5}
-}
+./scripts/upload-training-artifacts.sh ./experiment-output gs://my-llama-training/experiments/2024-01-15-llama-lora/
+# Metadata auto-tagged: git commit, branch, timestamp
 ```
 
-### 4. Large Directory Listings
-**Problem:** `ls` on bucket with 1M+ files is slow  
-**Fix:** Use prefixes, don't list entire bucket
+**Step 4 — Download the model on another machine:**
 ```bash
-# Good
-gcloud storage ls gs://bucket/experiments/2024-01/
-
-# Bad
-gcloud storage ls gs://bucket/  # Might timeout
+./scripts/download-model.sh gs://my-llama-training/experiments/2024-01-15-llama-lora/checkpoint-final.pt ./model.pt
 ```
 
-### 5. Mount Performance
-**Problem:** GCS FUSE is slower than native filesystem  
-**Fix:** 
-- Cache frequently accessed files locally
-- Use sequential reads when possible
-- Increase `--stat-cache-ttl` and `--type-cache-ttl`
-
-### 6. Silent Failures in Scripts
-**Problem:** `cp` fails but script continues  
-**Fix:**
+**Step 5 — Keep outputs in sync during training:**
 ```bash
-set -euo pipefail
-gcloud storage cp ... || { echo "Upload failed"; exit 1; }
+./scripts/sync-directory.sh ./logs gs://my-llama-training/logs/tensorboard/
 ```
 
----
+**Step 6 — Clean up old experiments after a month:**
+```bash
+./scripts/cleanup-old-runs.sh gs://my-llama-training/experiments --older-than=30d --dry-run
+# Review output, then:
+./scripts/cleanup-old-runs.sh gs://my-llama-training/experiments --older-than=30d --yes
+```
 
-## Scripts
+**Common mistake — wrong region causes egress charges:**
+```bash
+# Bad: bucket in us-east1, Vertex AI job in us-central1 → egress fees
+./scripts/setup-bucket.sh my-bucket --location=us-east1
 
-See `scripts/` directory for:
-- `setup-bucket.sh` - Create and configure buckets
-- `upload-training-artifacts.sh` - Upload with metadata
-- `download-model.sh` - Download with validation
-- `cleanup-old-runs.sh` - Clean up old experiments
-- `sync-directory.sh` - Bidirectional sync
-
----
-
-## References
-
-See `references/` directory for:
-- Official documentation links
-- Storage class comparison tables
-- CLI command cheat sheets
+# Good: match your compute region
+./scripts/setup-bucket.sh my-bucket --location=us-central1
+```
+</examples>

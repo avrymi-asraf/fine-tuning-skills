@@ -1,252 +1,47 @@
-# Cloud Job Orchestration
-
-Orchestrate ML training jobs on cloud platforms (Vertex AI, SageMaker, RunPod, etc.). Manage GPU selection, spot instances, monitoring, cost estimation, and job lifecycle.
-
+---
+name: cloud-job-orchestration
+description: Submit, monitor, and manage Vertex AI custom training jobs on GCP. Covers job configuration, GPU machine selection, Spot VMs with preemption handling, cost estimation, log streaming, and TensorBoard integration. Use when the user needs to run, schedule, monitor, cancel, or debug ML training jobs on Vertex AI — or when choosing GPU machine types and estimating costs.
 ---
 
-## Purpose
+<cloud-job-orchestration>
+This skill covers the full lifecycle of Vertex AI custom training jobs — from choosing GPU hardware and estimating costs through job submission, monitoring, preemption recovery, and artifact retrieval.
 
-This skill covers:
+**What's covered:**
+- `<job-submission>` — Two ways to submit jobs: Python SDK and gcloud CLI, with config files
+- `<gpu-machine-selection>` — Choosing the right machine type and accelerator for the workload
+- `<spot-and-preemption>` — Spot VMs for cost savings, preemption signals, checkpointing strategy
+- `<job-monitoring>` — Status polling, log streaming, TensorBoard integration
+- `<cost-estimation>` — Estimating job cost before submission, budget awareness
+- `<environment-and-secrets>` — Vertex AI automatic env vars, Secret Manager integration
+- `<common-pitfalls>` — OOM, queued jobs, container startup failures, data bottlenecks
+- `<examples>` — End-to-end workflow from cost estimate to result download
 
-- **Job Submission**: Creating and launching training jobs on cloud ML platforms
-- **GPU/Machine Selection**: Choosing optimal machine types and GPU configurations
-- **Cost Optimization**: Spot/preemptible instances, reservations, and pricing strategies
-- **Job Monitoring**: Logs, metrics, status tracking, and debugging
-- **Preemption Handling**: Checkpointing and recovery for fault-tolerant training
-- **Platform Comparison**: Vertex AI vs SageMaker vs Lambda vs RunPod
+**Scripts:** `scripts/submit-training-job.py`, `scripts/monitor-job.sh`, `scripts/handle-preemption.sh`, `scripts/cancel-job.sh`, `scripts/cost-estimate.py`, `scripts/example-job-config.yaml`
+**References:** `references/gpu-machine-types.md`, `references/command-cheat-sheet.md`, `references/documentation-links.md`
 
----
+**Prerequisites:** `cloud-infrastructure-setup` (GCP auth, project, APIs, IAM configured). Container image already pushed to Artifact Registry or GCR.
+</cloud-job-orchestration>
 
-## Prerequisites
+<job-submission>
+There are two main approaches. Use whichever fits the workflow.
 
-1. **Cloud CLI installed and authenticated**:
-   ```bash
-   # GCP/Vertex AI
-   gcloud auth application-default login
-   gcloud config set project YOUR_PROJECT_ID
-   
-   # AWS/SageMaker
-   aws configure
-   
-   # RunPod (API key)
-   export RUNPOD_API_KEY=your_key
-   ```
+**Python SDK** — use `scripts/submit-training-job.py` for the full-featured version with config files:
+```bash
+# From a YAML config (recommended)
+uv run scripts/submit-training-job.py --config job_config.yaml
 
-2. **Container image pushed to registry**:
-   ```bash
-   # GCP Artifact Registry or GCR
-   gcr.io/PROJECT_ID/training-image:tag
-   
-   # AWS ECR
-   ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/training-image:tag
-   ```
-
-3. **Cloud Storage buckets configured**:
-   ```bash
-   # GCP GCS
-   gs://your-bucket/datasets/
-   gs://your-bucket/outputs/
-   
-   # AWS S3
-   s3://your-bucket/datasets/
-   ```
-
-4. **Python dependencies**:
-   ```bash
-   pip install google-cloud-aiplatform boto3 sagemaker runpod
-   ```
-
----
-
-## Quick Reference: Platform Comparison
-
-| Feature | Vertex AI | SageMaker | RunPod | Lambda Labs |
-|---------|-----------|-----------|--------|-------------|
-| **GPU Types** | H100, A100, L4, T4, V100, TPU | H100, A100, V100, T4 | H100, A100, RTX 4090/3090 | H100, A100, RTX A6000 |
-| **Spot/Preemptible** | Yes (60-91% discount) | Yes (Spot Training) | Yes | Limited |
-| **On-Demand Pricing** | Higher | Higher | Lower | Lower |
-| **Cold Start** | 2-5 min | 2-5 min | 10-30 sec | 2-5 min |
-| **Autoscaling** | Yes | Yes | No | No |
-| **Reserved Capacity** | Yes (CUDs) | Yes (Savings Plans) | No | Yes |
-| **MLOps Integration** | Native (Pipelines, Experiments) | Native (Pipelines, Model Registry) | Minimal | Minimal |
-| **Best For** | Enterprise, GCP shops | Enterprise, AWS shops | Quick experiments, cost-sensitive | Cost-sensitive, simple workloads |
-
----
-
-## GPU Machine Type Selection Guide
-
-### Vertex AI Machine Types
-
-#### A3 Series (H100 GPUs - Latest Generation)
-| Machine Type | GPUs | GPU Memory | vCPUs | RAM | Use Case |
-|--------------|------|------------|-------|-----|----------|
-| `a3-highgpu-1g` | 1x H100 | 80 GB | 12 | 170 GB | Single-GPU LLM fine-tuning |
-| `a3-highgpu-2g` | 2x H100 | 160 GB | 24 | 340 GB | Medium-scale distributed training |
-| `a3-highgpu-4g` | 4x H100 | 320 GB | 48 | 680 GB | Large-scale training |
-| `a3-highgpu-8g` | 8x H100 | 640 GB | 96 | 1360 GB | Full-node distributed training |
-| `a3-megagpu-8g` | 8x H100 Mega | 640 GB | 96 | 1360 GB | Multi-node with GPUDirect-TCPXO |
-| `a3-ultragpu-8g` | 8x H200 | 1128 GB | 208 | 2048 GB | Largest models, GPUDirect-RDMA |
-
-#### A2 Series (A100 GPUs)
-| Machine Type | GPUs | GPU Memory | vCPUs | RAM | Use Case |
-|--------------|------|------------|-------|-----|----------|
-| `a2-highgpu-1g` | 1x A100 40GB | 40 GB | 12 | 170 GB | Standard training/inference |
-| `a2-highgpu-2g` | 2x A100 40GB | 80 GB | 24 | 340 GB | Multi-GPU training |
-| `a2-highgpu-4g` | 4x A100 40GB | 160 GB | 48 | 680 GB | Distributed training |
-| `a2-highgpu-8g` | 8x A100 40GB | 320 GB | 96 | 1360 GB | Large-scale distributed |
-| `a2-ultragpu-1g` | 1x A100 80GB | 80 GB | 12 | 170 GB | Large model training |
-| `a2-ultragpu-8g` | 8x A100 80GB | 640 GB | 96 | 1360 GB | Maximum A100 capacity |
-| `a2-megagpu-16g` | 16x A100 40GB | 640 GB | 96 | 1360 GB | Maximum GPU density |
-
-#### G2 Series (L4 GPUs - Cost-Effective Inference)
-| Machine Type | GPUs | GPU Memory | vCPUs | RAM | Use Case |
-|--------------|------|------------|-------|-----|----------|
-| `g2-standard-4` | 1x L4 | 24 GB | 4 | 16 GB | Inference, small training |
-| `g2-standard-8` | 1x L4 | 24 GB | 8 | 32 GB | Light training workloads |
-| `g2-standard-24` | 2x L4 | 48 GB | 24 | 96 GB | Medium training |
-| `g2-standard-48` | 4x L4 | 96 GB | 48 | 192 GB | Multi-GPU training |
-
-#### N1 Series with GPUs (Legacy/Cost-Effective)
-| Machine Type | Compatible GPUs | Max GPUs | Use Case |
-|--------------|-----------------|----------|----------|
-| `n1-standard-4` | T4, P4, V100, P100 | 1-4 | Small experiments |
-| `n1-standard-8` | T4, P4, V100, P100 | 1-4 | Development |
-| `n1-standard-16` | T4, P4, V100, P100 | 2-4 | Medium workloads |
-| `n1-standard-32` | T4, P4, V100, P100 | 2-4 | Production training |
-| `n1-highmem-*` | T4, P4, V100, P100 | 1-4 | Memory-intensive |
-
-### GPU Selection Decision Tree
-
-```
-Starting New Project?
-├── Yes → Use a3-highgpu-1g (H100) for single GPU
-│         or a2-highgpu-1g (A100) for cost savings
-│
-├── Large model (>40B parameters)?
-│   ├── Yes → a3-highgpu-8g or a3-ultragpu-8g
-│   └── No → Continue...
-│
-├── Multi-GPU distributed?
-│   ├── Yes → a3-highgpu-2g/4g/8g or a2-highgpu-*
-│   └── No → Continue...
-│
-├── Inference only?
-│   ├── Yes → g2-standard-* (L4) or n1 with T4
-│   └── No → Continue...
-│
-├── Budget constrained?
-│   ├── Yes → Spot VMs on n1-standard-16 + V100/T4
-│   └── No → a3/a2 on-demand
-│
-└── Need TPU?
-    ├── Yes → ct5lp-hightpu-1t/4t/8t or ct6e-*
-    └── No → Use GPU options above
+# Inline arguments
+uv run scripts/submit-training-job.py \
+  --container-uri gcr.io/PROJECT/training:v1 \
+  --machine-type a2-highgpu-1g \
+  --accelerator-type NVIDIA_TESLA_A100 --accelerator-count 1 \
+  --base-output-dir gs://bucket/outputs \
+  --use-spot --dry-run
 ```
 
----
+The SDK approach (`CustomJob`) takes `worker_pool_specs` — each spec defines machine type, container image, env vars, and disk config. See `scripts/example-job-config.yaml` for a complete config template.
 
-## Vertex AI Job Submission
-
-### Method 1: CustomContainerTrainingJob (SDK)
-
-```python
-from google.cloud import aiplatform
-
-# Initialize
-aiplatform.init(project="PROJECT_ID", location="us-central1")
-
-# Create job
-job = aiplatform.CustomContainerTrainingJob(
-    display_name="llm-finetuning-job",
-    container_uri="gcr.io/PROJECT_ID/training-image:v1",
-    model_serving_container_image_uri=None,  # Skip model upload
-)
-
-# Run with GPU
-job.run(
-    machine_type="a2-highgpu-1g",
-    accelerator_type="NVIDIA_TESLA_A100",
-    accelerator_count=1,
-    replica_count=1,
-    base_output_dir="gs://your-bucket/outputs/job-001",
-    environment_variables={
-        "MODEL_NAME": "meta-llama/Llama-2-7b",
-        "BATCH_SIZE": "4",
-        "EPOCHS": "3",
-    },
-    sync=False,  # Don't wait for completion
-)
-```
-
-### Method 2: CustomJob (Lower Level)
-
-```python
-from google.cloud import aiplatform
-
-job = aiplatform.CustomJob(
-    display_name="training-job",
-    worker_pool_specs=[
-        {
-            "machine_spec": {
-                "machine_type": "a3-highgpu-1g",
-                "accelerator_type": "NVIDIA_H100_80GB",
-                "accelerator_count": 1,
-            },
-            "replica_count": 1,
-            "container_spec": {
-                "image_uri": "gcr.io/PROJECT/training:v1",
-                "command": ["python", "train.py"],
-                "args": ["--config", "config.yaml"],
-                "env": [
-                    {"name": "MODEL_NAME", "value": "llama-2-7b"},
-                ],
-            },
-            "disk_spec": {
-                "boot_disk_type": "pd-ssd",
-                "boot_disk_size_gb": 500,
-            },
-        }
-    ],
-    base_output_dir="gs://bucket/outputs",
-)
-
-job.run(sync=False)
-print(f"Job submitted: {job.resource_name}")
-```
-
-### Method 3: gcloud CLI with Config File
-
-Create `job_config.yaml`:
-
-```yaml
-workerPoolSpecs:
-  - machineSpec:
-      machineType: a2-highgpu-1g
-      acceleratorType: NVIDIA_TESLA_A100
-      acceleratorCount: 1
-    replicaCount: 1
-    containerSpec:
-      imageUri: gcr.io/PROJECT/training:v1
-      command:
-        - python
-        - train.py
-      env:
-        - name: MODEL_NAME
-          value: llama-2-7b
-        - name: OUTPUT_DIR
-          value: $(AIP_MODEL_DIR)
-    diskSpec:
-      bootDiskType: pd-ssd
-      bootDiskSizeGb: 500
-
-baseOutputDirectory:
-  outputUriPrefix: gs://your-bucket/outputs/job-001
-
-scheduling:
-  timeout: 86400s  # 24 hours
-```
-
-Submit:
+**gcloud CLI** — faster for one-off jobs:
 ```bash
 gcloud ai custom-jobs create \
   --region=us-central1 \
@@ -254,571 +49,219 @@ gcloud ai custom-jobs create \
   --config=job_config.yaml
 ```
 
----
+The YAML config for gcloud uses camelCase keys (`machineType`, `acceleratorType`, `containerSpec`). See `references/command-cheat-sheet.md` for config file format and full CLI reference.
 
-## Spot VMs & Preemption Handling
+Key SDK classes:
+- `aiplatform.CustomJob` — low-level, full control over worker pool specs
+- `aiplatform.CustomContainerTrainingJob` — higher-level, simpler API with `.run()`
 
-### What are Spot VMs?
+Always call `aiplatform.init(project=PROJECT, location=REGION)` before creating jobs.
+</job-submission>
 
-- **Discount**: 60-91% off on-demand pricing
-- **Risk**: Can be preempted (stopped/deleted) at any time
-- **Best for**: Fault-tolerant, checkpoint-aware training
+<gpu-machine-selection>
+Full tables in `references/gpu-machine-types.md`. Quick decision guide:
 
-### Enabling Spot VMs
+| Workload | Machine Type | GPU | VRAM |
+|----------|-------------|-----|------|
+| Fine-tune ≤7B model | `g2-standard-8` | 1× L4 | 24 GB |
+| Fine-tune 7B–13B | `a2-highgpu-1g` | 1× A100 40GB | 40 GB |
+| Fine-tune 13B–70B | `a2-ultragpu-1g` | 1× A100 80GB | 80 GB |
+| Fine-tune >70B (multi-GPU) | `a3-highgpu-8g` | 8× H100 | 640 GB |
+| Inference / prototyping | `g2-standard-4` | 1× L4 | 24 GB |
+| Budget experiments | `n1-standard-8` + T4 | 1× T4 | 16 GB |
 
+**Accelerator type strings** for the SDK: `NVIDIA_TESLA_A100`, `NVIDIA_A100_80GB`, `NVIDIA_H100_80GB`, `NVIDIA_L4`, `NVIDIA_TESLA_T4`, `NVIDIA_TESLA_V100`.
+
+For A3/A2/G2 machines, the GPU is fixed to the machine type — don't specify `accelerator_type` separately. For N1 machines, attach GPUs explicitly with `accelerator_type` + `accelerator_count`.
+
+**Region availability** varies. H100s are concentrated in `us-central1`, `europe-west4`, `asia-northeast1`. Check availability with:
+```bash
+gcloud compute accelerator-types list --filter="zone:us-central1"
+```
+</gpu-machine-selection>
+
+<spot-and-preemption>
+Spot VMs cost 60–91% less but can be preempted at any time. GCP sends `SIGTERM` 30 seconds before termination.
+
+**Enable Spot in SDK:**
 ```python
-from google.cloud import aiplatform
-
 job = aiplatform.CustomJob(
-    display_name="spot-training-job",
+    display_name="training-job",
     worker_pool_specs=[...],
-    scheduling={
-        "strategy": "SPOT",  # Enable spot
-        "max_wait_duration": "3600s",  # Wait up to 1 hour for capacity
-    },
+    scheduling={"strategy": "SPOT", "max_wait_duration": "3600s"},
 )
 ```
 
-Or in config file:
-```yaml
-scheduling:
-  strategy: SPOT
-  maxWaitDuration: 3600s
+**Preemption recovery** — use `scripts/handle-preemption.sh` to auto-retry preempted jobs:
+```bash
+./scripts/handle-preemption.sh --config job_config.yaml --max-retries 5 --region us-central1
 ```
 
-### Handling Preemption in Training Code
-
+**Checkpointing is mandatory with Spot.** Vertex AI sets `AIP_CHECKPOINT_DIR` automatically. In HuggingFace Trainer:
 ```python
-import os
-import signal
-import sys
-import torch
-from transformers import TrainerCallback
-
-class PreemptionCallback(TrainerCallback):
-    """Handle GCP preemption gracefully."""
-    
-    def __init__(self, checkpoint_dir):
-        self.checkpoint_dir = checkpoint_dir
-        self.preempted = False
-        
-        # Set up signal handler
-        signal.signal(signal.SIGTERM, self._handle_sigterm)
-    
-    def _handle_sigterm(self, signum, frame):
-        """SIGTERM is sent 30s before preemption."""
-        print("⚠️  Preemption warning received! Saving checkpoint...")
-        self.preempted = True
-        # Trigger checkpoint save
-        if hasattr(self, 'control'):
-            self.control.should_save = True
-    
-    def on_step_end(self, args, state, control, **kwargs):
-        if self.preempted:
-            control.should_training_stop = True
-        return control
-
-# In training script
-trainer = Trainer(
-    ...,
-    callbacks=[PreemptionCallback(os.environ.get("AIP_CHECKPOINT_DIR", "/gcs/checkpoints"))],
-)
-```
-
-### Checkpointing Strategy
-
-```python
-import os
-from transformers import TrainingArguments
-
-# Vertex AI sets these environment variables automatically
-output_dir = os.environ.get("AIP_MODEL_DIR", "/gcs/output")
-checkpoint_dir = os.environ.get("AIP_CHECKPOINT_DIR", "/gcs/checkpoints")
-
-# Resume from checkpoint if exists
-last_checkpoint = None
-if os.path.isdir(checkpoint_dir) and len(os.listdir(checkpoint_dir)) > 0:
-    last_checkpoint = get_last_checkpoint(checkpoint_dir)
-    print(f"Resuming from checkpoint: {last_checkpoint}")
-
 training_args = TrainingArguments(
-    output_dir=output_dir,
+    output_dir=os.environ.get("AIP_MODEL_DIR", "/output"),
     save_strategy="steps",
     save_steps=100,
     save_total_limit=3,
-    resume_from_checkpoint=last_checkpoint,
-    # For spot instances, save more frequently
-    save_safetensors=True,
+    resume_from_checkpoint=last_checkpoint,  # auto-resume on retry
 )
 ```
 
-### Preemption Recovery Script
+Handle `SIGTERM` with a callback that sets `control.should_save = True` and `control.should_training_stop = True`. The training code in the container is responsible for saving state within the 30-second window.
+</spot-and-preemption>
 
+<job-monitoring>
+**Stream logs** (blocks until job ends):
 ```bash
-#!/bin/bash
-# handle-preemption.sh
-
-JOB_NAME="${1:-training-job}"
-REGION="${2:-us-central1}"
-MAX_RETRIES=5
-RETRY_COUNT=0
-
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    echo "Starting job attempt $((RETRY_COUNT + 1))..."
-    
-    # Submit job
-    JOB_ID=$(gcloud ai custom-jobs create \
-        --region=$REGION \
-        --display-name="${JOB_NAME}-retry-${RETRY_COUNT}" \
-        --config=spot_job_config.yaml \
-        --format='value(name)')
-    
-    # Monitor
-    while true; do
-        STATUS=$(gcloud ai custom-jobs describe $JOB_ID \
-            --region=$REGION \
-            --format='value(state)')
-        
-        echo "Job status: $STATUS"
-        
-        case $STATUS in
-            "JOB_STATE_SUCCEEDED")
-                echo "Job completed successfully!"
-                exit 0
-                ;;
-            "JOB_STATE_FAILED"|"JOB_STATE_CANCELLED")
-                echo "Job failed or was cancelled."
-                exit 1
-                ;;
-            "JOB_STATE_PREEMPTING"|"JOB_STATE_PREEMPTED")
-                echo "Job was preempted. Retrying..."
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-                sleep 30
-                break
-                ;;
-        esac
-        
-        sleep 60
-    done
-done
-
-echo "Max retries reached. Job failed."
-exit 1
+gcloud ai custom-jobs stream-logs JOB_ID --region=us-central1
 ```
 
----
-
-## Job Monitoring
-
-### Real-Time Log Streaming
-
+**Use `scripts/monitor-job.sh`** for status polling with elapsed time, status change alerts, and auto-cleanup:
 ```bash
-# Get job ID
-JOB_ID=$(gcloud ai custom-jobs list --region=us-central1 \
-  --filter="displayName:training-job" --format="value(name)" | head -1)
-
-# Stream logs
-gcloud ai custom-jobs stream-logs $JOB_ID --region=us-central1
+./scripts/monitor-job.sh JOB_ID us-central1
+./scripts/monitor-job.sh $(cat .last_job_id)    # works with submit script output
 ```
 
-### Python SDK Monitoring
+**Job states:** `PENDING` → `RUNNING` → `SUCCEEDED` / `FAILED` / `CANCELLED` / `PREEMPTED`. The `PREEMPTING` state means the 30-second shutdown window is active.
 
-```python
-from google.cloud import aiplatform
-
-job = aiplatform.CustomJob.get("projects/PROJECT/locations/REGION/customJobs/JOB_ID")
-
-# Get status
-print(f"State: {job.state}")
-print(f"Start time: {job.start_time}")
-print(f"End time: {job.end_time}")
-
-# Wait for completion
-job.wait_for_resource_creation()
-job.wait()  # Blocks until completion
+**Cancel a job:**
+```bash
+./scripts/cancel-job.sh JOB_ID us-central1
+# or directly
+gcloud ai custom-jobs cancel JOB_ID --region=us-central1
 ```
 
-### Cloud Monitoring Metrics
-
+**TensorBoard** — create a TensorBoard instance, then pass its resource name when creating the job:
 ```python
-from google.cloud import monitoring_v3
-
-client = monitoring_v3.MetricServiceClient()
-project_name = f"projects/{PROJECT_ID}"
-
-# List available metrics for your job
-filter_str = '''
-    resource.type="aiplatform.googleapis.com/CustomJob"
-    resource.labels.job_id="JOB_ID"
-'''
-
-results = client.list_time_series(
-    request={
-        "name": project_name,
-        "filter": filter_str,
-        "interval": monitoring_v3.TimeInterval({
-            "end_time": {"seconds": int(time.time())},
-            "start_time": {"seconds": int(time.time()) - 3600},
-        }),
-    }
-)
-
-for result in results:
-    print(f"Metric: {result.metric.type}")
-    print(f"Points: {list(result.points)}")
-```
-
-### TensorBoard Integration
-
-```python
-from google.cloud import aiplatform
-
-# Create TensorBoard
 tensorboard = aiplatform.TensorBoard.create(display_name="training-logs")
-
-# Run job with TensorBoard
 job = aiplatform.CustomContainerTrainingJob(
-    display_name="training-with-tb",
+    display_name="training-job",
     container_uri="gcr.io/PROJECT/training:v1",
     tensorboard=tensorboard.resource_name,
 )
-
-job.run(
-    machine_type="a2-highgpu-1g",
-    accelerator_type="NVIDIA_TESLA_A100",
-    accelerator_count=1,
-)
 ```
 
----
+The container writes to `AIP_TENSORBOARD_LOG_DIR` and Vertex AI syncs it automatically.
+</job-monitoring>
 
-## Cost Estimation
-
-### GCP Pricing (Approximate, subject to change)
-
-| GPU Type | On-Demand/hr | Spot/hr | 1-Year CUD | 3-Year CUD |
-|----------|-------------|---------|------------|------------|
-| H100 80GB | ~$4.50 | ~$1.35 | ~$2.84 | ~$2.03 |
-| A100 40GB | ~$2.48 | ~$0.74 | ~$1.56 | ~$1.12 |
-| A100 80GB | ~$3.67 | ~$1.10 | ~$2.31 | ~$1.65 |
-| L4 | ~$0.80 | ~$0.24 | ~$0.50 | ~$0.36 |
-| T4 | ~$0.35 | ~$0.11 | ~$0.22 | ~$0.16 |
-| V100 | ~$2.48 | ~$0.74 | ~$1.56 | ~$1.12 |
-
-*Plus machine type costs and boot disk charges*
-
-### Cost Estimation Script
-
-See `scripts/cost-estimate.py` for a complete cost calculator.
-
-Basic usage:
+<cost-estimation>
+**Use `scripts/cost-estimate.py`** before every job:
 ```bash
-python scripts/cost-estimate.py \
-  --machine-type a2-highgpu-1g \
-  --hours 24 \
-  --use-spot
+uv run scripts/cost-estimate.py --machine-type a2-highgpu-1g --hours 24 --compare
+uv run scripts/cost-estimate.py --machine-type a2-highgpu-1g --hours 24 --use-spot
+uv run scripts/cost-estimate.py --list-machines    # show all options with pricing
 ```
 
-### Budget Alerts
+Quick reference (GPU cost only, approximate):
 
-```python
-from google.cloud import billing_budgets_v1
+| GPU | On-Demand/hr | Spot/hr |
+|-----|-------------|---------|
+| H100 80GB | ~$4.50 | ~$1.35 |
+| A100 40GB | ~$2.48 | ~$0.74 |
+| A100 80GB | ~$3.67 | ~$1.10 |
+| L4 | ~$0.80 | ~$0.24 |
+| T4 | ~$0.35 | ~$0.11 |
 
-client = billing_budgets_v1.BudgetServiceClient()
+Total job cost = (machine + GPU) × hours. The `cost-estimate.py` script includes machine costs. Actual pricing changes — always verify with the [GCP pricing page](https://cloud.google.com/compute/gpus-pricing).
+</cost-estimation>
 
-budget = billing_budgets_v1.Budget(
-    display_name="ML Training Budget",
-    budget_filter=billing_budgets_v1.Filter(
-        projects=[f"projects/{PROJECT_ID}"],
-        credit_types_treatment=billing_budgets_v1.Filter.CreditTypesTreatment.INCLUDE_ALL_CREDITS,
-    ),
-    amount=billing_budgets_v1.BudgetAmount(
-        specified_amount=currency_pb2.Money(currency_code="USD", units=1000)
-    ),
-    threshold_rules=[
-        billing_budgets_v1.ThresholdRule(threshold_percent=50),
-        billing_budgets_v1.ThresholdRule(threshold_percent=80),
-        billing_budgets_v1.ThresholdRule(threshold_percent=100),
-    ],
-    all_updates_rule=billing_budgets_v1.AllUpdatesRule(
-        pubsub_topic=f"projects/{PROJECT_ID}/topics/budget-alerts"
-    ),
-)
+<environment-and-secrets>
+Vertex AI injects these env vars into the container automatically:
 
-client.create_budget(
-    billing_account=f"billingAccounts/{BILLING_ACCOUNT_ID}",
-    budget=budget,
-)
-```
+| Variable | Contents |
+|----------|----------|
+| `AIP_MODEL_DIR` | GCS path for model artifacts |
+| `AIP_CHECKPOINT_DIR` | GCS path for checkpoints |
+| `AIP_TENSORBOARD_LOG_DIR` | GCS path for TensorBoard logs |
+| `CLOUD_ML_JOB_ID` | Current job ID |
+| `CLOUD_ML_PROJECT_ID` | Project ID |
 
----
-
-## Environment Variables & Secrets
-
-### Standard Vertex AI Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `AIP_MODEL_DIR` | Output directory for model artifacts | `gs://bucket/outputs/model` |
-| `AIP_TENSORBOARD_LOG_DIR` | TensorBoard log directory | `gs://bucket/logs` |
-| `AIP_CHECKPOINT_DIR` | Checkpoint directory | `gs://bucket/checkpoints` |
-| `AIP_DATA_FORMAT` | Data format for managed datasets | `jsonl` |
-| `CLOUD_ML_JOB_ID` | Current job ID | `1234567890` |
-| `CLOUD_ML_PROJECT_ID` | Project ID | `my-project-123` |
-
-### Using Secret Manager
-
+**Never hardcode secrets in the container or config.** Use Secret Manager:
 ```python
 from google.cloud import secretmanager
 
-def get_secret(secret_id, project_id):
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("UTF-8")
-
-# In training script
-hf_token = get_secret("huggingface-token", os.environ["CLOUD_ML_PROJECT_ID"])
-os.environ["HF_TOKEN"] = hf_token
+client = secretmanager.SecretManagerServiceClient()
+name = f"projects/{os.environ['CLOUD_ML_PROJECT_ID']}/secrets/hf-token/versions/latest"
+hf_token = client.access_secret_version(request={"name": name}).payload.data.decode("UTF-8")
 ```
 
-### Passing Secrets via Environment
+Pass custom env vars via the config's `env` field — they're visible in the job spec. Tokens and keys must go through Secret Manager.
+</environment-and-secrets>
 
-```yaml
-workerPoolSpecs:
-  - machineSpec: {...}
-    containerSpec:
-      imageUri: gcr.io/PROJECT/training:v1
-      env:
-        - name: HF_TOKEN_SECRET
-          value: projects/PROJECT/secrets/hf-token/versions/latest
-```
+<common-pitfalls>
+| Problem | Symptom | Fix |
+|---------|---------|-----|
+| GPU OOM | `CUDA out of memory` | Lower `per_device_train_batch_size`, increase `gradient_accumulation_steps`, enable `gradient_checkpointing` |
+| Job stuck queued | `PENDING` for hours | Try spot (better availability), different region, request quota increase |
+| Container fails immediately | `FAILED` right after `RUNNING` | Test locally first: `docker run --gpus all IMAGE python -c "import torch; print(torch.cuda.is_available())"` |
+| Slow training / GPU underused | Low GPU utilization | Increase `dataloader_num_workers`, use `pin_memory=True`, pre-process data |
+| Preemption loop | Repeated preemption | Switch to on-demand, try smaller machine (better spot availability), use reservations |
+| Missing GPU quota | `QUOTA_EXCEEDED` | Request increase in Console → IAM → Quotas (2–3 day lead time) |
+</common-pitfalls>
 
-Then in code:
-```python
-import subprocess
+<cloud-job-orchestration-scripts>
+All scripts are self-documenting — run without arguments for usage. Shell scripts require `set -euo pipefail`. Python scripts use PEP 723 inline deps and run with `uv run`.
 
-def load_secret_from_env(env_var):
-    """Load secret from Secret Manager reference in env var."""
-    secret_path = os.environ.get(env_var)
-    if secret_path and secret_path.startswith("projects/"):
-        result = subprocess.run(
-            ["gcloud", "secrets", "versions", "access", "latest", 
-             "--secret", secret_path.split("/")[3]],
-            capture_output=True, text=True
-        )
-        return result.stdout.strip()
-    return secret_path
-```
+| Script | Purpose |
+|--------|---------|
+| `scripts/submit-training-job.py` | Submit Vertex AI custom job from YAML config or CLI args. Saves job ID for monitoring. |
+| `scripts/monitor-job.sh` | Poll job status, stream logs, show elapsed time. Handles all terminal states. |
+| `scripts/handle-preemption.sh` | Auto-retry preempted spot jobs with configurable max retries and delay. |
+| `scripts/cancel-job.sh` | Cancel a running job with confirmation prompt. Shows output location for checkpoints. |
+| `scripts/cost-estimate.py` | Estimate cost by machine type, hours, and spot/on-demand. Supports `--compare` and `--list-machines`. |
+| `scripts/example-job-config.yaml` | Template YAML config with all common fields filled in. |
+</cloud-job-orchestration-scripts>
 
----
+<cloud-job-orchestration-reference>
+| File | Contents |
+|------|----------|
+| `references/gpu-machine-types.md` | Full GPU machine type tables for A3, A2, G2, G4, N1 series and TPUs. Selection guide by use case and budget. |
+| `references/command-cheat-sheet.md` | gcloud CLI and Python SDK quick reference: job CRUD, config file format, GCS operations, troubleshooting commands. |
+| `references/documentation-links.md` | Official Vertex AI docs, SDK references, pricing pages, spot VM guides, TensorBoard docs. |
+</cloud-job-orchestration-reference>
 
-## AWS SageMaker Quick Reference
+<examples>
+**End-to-end: Fine-tune a 7B model on Vertex AI with Spot VMs.**
 
-### Submit Training Job
-
-```python
-import sagemaker
-from sagemaker.pytorch import PyTorch
-
-estimator = PyTorch(
-    entry_point="train.py",
-    source_dir=".",
-    role=sagemaker.get_execution_role(),
-    framework_version="2.0.0",
-    py_version="py310",
-    instance_count=1,
-    instance_type="ml.p4d.24xlarge",  # 8x A100
-    use_spot_instances=True,  # Spot
-    max_wait=86400,
-    checkpoint_s3_uri="s3://bucket/checkpoints",
-    checkpoint_local_path="/opt/ml/checkpoints",
-    environment={
-        "MODEL_NAME": "llama-2-7b",
-    },
-)
-
-estimator.fit("s3://bucket/dataset/")
-```
-
-### Spot Instance Handling
-
-```python
-# SageMaker checkpointing is built-in
-# Use checkpoint_s3_uri for automatic S3 sync
-
-# In training code, checkpoints are at:
-CHECKPOINT_DIR = "/opt/ml/checkpoints"
-
-# Detect spot interruption
-import json
-import requests
-
-def is_spot_interruption():
-    try:
-        response = requests.get(
-            "http://169.254.169.254/latest/meta-data/spot/instance-action",
-            timeout=2
-        )
-        return response.status_code == 200
-    except:
-        return False
-
-# Check periodically during training
-if is_spot_interruption():
-    trainer.save_model(CHECKPOINT_DIR)
-    trainer.save_state()
-```
-
----
-
-## RunPod Quick Reference
-
-### Submit Job via API
-
-```python
-import runpod
-
-runpod.api_key = os.environ["RUNPOD_API_KEY"]
-
-pod = runpod.create_pod(
-    name="training-job",
-    image_name="gcr.io/PROJECT/training:v1",
-    gpu_type_id="NVIDIA H100 80GB HBM3",
-    cloud_type="COMMUNITY",  # or "SECURE" for datacenter
-    container_disk_in_gb=50,
-    volume_in_gb=500,
-    ports="8888/http,22/tcp",
-    env={
-        "MODEL_NAME": "llama-2-7b",
-        "PYTHONUNBUFFERED": "1",
-    },
-)
-
-print(f"Pod created: {pod['id']}")
-```
-
-### Serverless GPU (Pay per second)
-
-```python
-import requests
-
-# RunPod Serverless endpoint
-endpoint_id = "your-endpoint-id"
-api_key = os.environ["RUNPOD_API_KEY"]
-
-response = requests.post(
-    f"https://api.runpod.ai/v2/{endpoint_id}/run",
-    headers={"Authorization": f"Bearer {api_key}"},
-    json={
-        "input": {
-            "prompt": "Your training config here",
-            "model": "llama-2-7b",
-        }
-    },
-)
-```
-
----
-
-## Common Pitfalls & Solutions
-
-### 1. GPU Out of Memory
-
-**Problem**: `CUDA out of memory` error
-
-**Solutions**:
-```python
-# Reduce batch size
-training_args = TrainingArguments(
-    per_device_train_batch_size=1,  # Start small
-    gradient_accumulation_steps=8,  # Effective batch = 8
-)
-
-# Use gradient checkpointing
-model.gradient_checkpointing_enable()
-
-# Use DeepSpeed ZeRO
-# See: https://huggingface.co/docs/transformers/main_classes/deepspeed
-```
-
-### 2. Job Stuck in "Queued"
-
-**Problem**: Job stays queued for hours
-
-**Solutions**:
-- Use spot VMs (often better availability)
-- Try different regions (us-central1, europe-west4)
-- Use Dynamic Workload Scheduler for GPU-heavy jobs
-- Request quota increase in advance
-
-### 3. Preemption Loops
-
-**Problem**: Job keeps getting preempted
-
-**Solutions**:
-- Use on-demand for critical jobs
-- Increase checkpoint frequency
-- Use reservations for guaranteed capacity
-- Consider smaller machine types (better spot availability)
-
-### 4. Container Startup Failures
-
-**Problem**: Job fails immediately
-
-**Solutions**:
+**1. Estimate cost:**
 ```bash
-# Test container locally first
-docker run --gpus all gcr.io/PROJECT/training:v1 python -c "import torch; print(torch.cuda.is_available())"
-
-# Check logs immediately
-gcloud ai custom-jobs stream-logs JOB_ID
+uv run scripts/cost-estimate.py --machine-type a2-highgpu-1g --hours 12 --compare
+# Shows on-demand ($44.04) vs Spot ($13.20) — 70% savings
 ```
 
-### 5. Slow Data Loading
-
-**Problem**: GPU underutilized, CPU bottleneck
-
-**Solutions**:
-```python
-# Increase dataloader workers
-training_args = TrainingArguments(
-    dataloader_num_workers=4,
-    dataloader_pin_memory=True,
-)
-
-# Use TFRecord or WebDataset format
-# Pre-load data to VM local SSD if possible
-```
-
----
-
-## Workflow: End-to-End Job Submission
-
+**2. Prepare config** — copy and edit the template:
 ```bash
-# 1. Estimate cost
-python scripts/cost-estimate.py --machine-type a2-highgpu-1g --hours 12
-
-# 2. Build and push container
-gcloud builds submit --tag gcr.io/PROJECT/training:v1 .
-
-# 3. Submit job
-python scripts/submit-training-job.py \
-  --config configs/training_config.yaml \
-  --use-spot
-
-# 4. Monitor
-python scripts/monitor-job.sh $(cat .last_job_id)
-
-# 5. Download results
-gsutil cp -r gs://bucket/outputs/job-001 ./results/
+cp scripts/example-job-config.yaml my-job.yaml
+# Edit: set container_uri, model name, GCS paths, env vars
 ```
 
----
+**3. Dry run** — verify config without submitting:
+```bash
+uv run scripts/submit-training-job.py --config my-job.yaml --dry-run
+```
 
-## See Also
+**4. Submit with Spot:**
+```bash
+uv run scripts/submit-training-job.py --config my-job.yaml --use-spot
+# Saves job ID to .last_job_id
+```
 
-- `scripts/` - Working scripts for job submission, monitoring, cost estimation
-- `references/` - Documentation links, GPU comparison tables, cheat sheets
-- Previous skills: Cloud Infrastructure Setup, Container Engineering, ML Training Pipeline
-- Next skill: Model Distribution & Deployment
+**5. Monitor:**
+```bash
+./scripts/monitor-job.sh $(cat .last_job_id)
+# Streams logs, shows status changes, prints output location on completion
+```
+
+**6. If preempted**, use the retry handler instead of steps 4–5:
+```bash
+./scripts/handle-preemption.sh --config my-job.yaml --max-retries 5
+```
+
+**7. Download results:**
+```bash
+gsutil -m cp -r gs://bucket/outputs/JOB_ID ./results/
+```
+
+**Common mistake — forgetting checkpointing with Spot:** The job succeeds on attempt 1 but gets preempted on attempt 2, losing all progress. Always set `save_strategy="steps"` and use `AIP_CHECKPOINT_DIR` so retries resume from the last checkpoint.
+</examples>

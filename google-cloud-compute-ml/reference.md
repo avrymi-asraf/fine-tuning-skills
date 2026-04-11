@@ -145,7 +145,7 @@ gcloud compute scp --recurse LOCAL_DIR NAME:REMOTE_DIR --zone=ZONE --tunnel-thro
 
 ### "Billing account not configured"
 **Cause:** Project not linked to billing  
-**Fix:** See `google-cloud-account` skill billing section
+**Fix:** See `cloud-infrastructure-setup` skill billing section
 
 ### "API not enabled"
 **Cause:** Compute Engine API disabled  

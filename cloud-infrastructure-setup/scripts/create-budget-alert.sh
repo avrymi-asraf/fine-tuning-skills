@@ -1,27 +1,27 @@
 #!/bin/bash
-# create-budget-alert.sh - Create billing budget alerts for ML projects
-#
-# Usage: ./create-budget-alert.sh [BILLING_ACCOUNT] [BUDGET_AMOUNT] [PROJECT_ID]
+# Purpose: Create billing budget alerts for ML projects
+# Usage:   ./create-budget-alert.sh BILLING_ACCOUNT_ID [BUDGET_AMOUNT] [PROJECT_ID]
+# Example: ./create-budget-alert.sh XXXXXX-XXXXXX-XXXXXX 1000 my-project
 
-set -e
+set -euo pipefail
 
 BILLING_ACCOUNT="${1:-}"
 BUDGET_AMOUNT="${2:-1000}"
-PROJECT_ID="${3:-$(gcloud config get-value project 2>/dev/null)}"
+PROJECT_ID="${3:-$(gcloud config get-value project 2>/dev/null || true)}"
 
 if [ -z "$BILLING_ACCOUNT" ]; then
-    echo "Usage: $0 BILLING_ACCOUNT_ID [BUDGET_AMOUNT] [PROJECT_ID]"
-    echo ""
-    echo "Example:"
-    echo "  $0 XXXXXX-XXXXXX-XXXXXX 1000 my-project"
-    echo ""
-    echo "To find your billing account ID:"
-    echo "  gcloud billing accounts list"
+    echo "Usage: $0 BILLING_ACCOUNT_ID [BUDGET_AMOUNT] [PROJECT_ID]" >&2
+    echo "" >&2
+    echo "Example:" >&2
+    echo "  $0 XXXXXX-XXXXXX-XXXXXX 1000 my-project" >&2
+    echo "" >&2
+    echo "To find your billing account ID:" >&2
+    echo "  gcloud billing accounts list" >&2
     exit 1
 fi
 
 if [ -z "$PROJECT_ID" ]; then
-    echo "Error: No project specified and no default project configured"
+    echo "Error: No project specified and no default project configured" >&2
     exit 1
 fi
 

@@ -1,12 +1,11 @@
 #!/bin/bash
-# check-permissions.sh - Verify IAM permissions for GCP ML workloads
+# Purpose: Verify IAM permissions for GCP ML workloads
+# Usage:   ./check-permissions.sh [SERVICE_ACCOUNT_EMAIL]
+# Example: ./check-permissions.sh ml-training-sa@my-project.iam.gserviceaccount.com
 #
-# Usage:
-#   ./check-permissions.sh [SERVICE_ACCOUNT_EMAIL]
-#
-#   If SERVICE_ACCOUNT_EMAIL is not provided, checks current user permissions
+# If SERVICE_ACCOUNT_EMAIL is not provided, checks current user permissions.
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -18,10 +17,10 @@ NC='\033[0m'
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 SERVICE_ACCOUNT="${1:-}"
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-log_section() { echo -e "\n${BLUE}=== $1 ===${NC}"; }
+log_info() { echo -e "${GREEN}[INFO]${NC} $1" >&2; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+log_section() { echo -e "\n${BLUE}=== $1 ===${NC}" >&2; }
 
 # Check if gcloud is installed
 check_gcloud() {

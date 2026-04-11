@@ -7,7 +7,7 @@
 #   ./handle-preemption.sh --config job_config.yaml [--max-retries 5]
 #
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE=""

@@ -1,8 +1,9 @@
 #!/bin/bash
-# setup-gcloud.sh - Install and configure gcloud CLI for ML workloads
-# Usage: ./setup-gcloud.sh [PROJECT_ID] [REGION]
+# Purpose: Install and configure gcloud CLI for ML workloads
+# Usage:   ./setup-gcloud.sh [PROJECT_ID] [REGION]
+# Example: ./setup-gcloud.sh my-ml-project us-central1
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -16,15 +17,15 @@ REGION="${2:-us-central1}"
 ZONE="${2:-us-central1}-a"
 
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    echo -e "${GREEN}[INFO]${NC} $1" >&2
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    echo -e "${YELLOW}[WARN]${NC} $1" >&2
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
 detect_os() {
@@ -258,14 +259,14 @@ main() {
     echo ""
     
     # Check if project ID was provided
-    if [ -z "$PROJECT_ID" ]; then
-        echo "Usage: $0 [PROJECT_ID] [REGION]"
-        echo ""
-        echo "Example:"
-        echo "  $0 my-ml-project us-central1"
-        echo ""
-        echo "If PROJECT_ID is not provided, interactive setup will be used."
-        echo ""
+    if [ -z "${PROJECT_ID:-}" ]; then
+        echo "Usage: $0 [PROJECT_ID] [REGION]" >&2
+        echo "" >&2
+        echo "Example:" >&2
+        echo "  $0 my-ml-project us-central1" >&2
+        echo "" >&2
+        echo "If PROJECT_ID is not provided, interactive setup will be used." >&2
+        echo "" >&2
     fi
     
     install_gcloud

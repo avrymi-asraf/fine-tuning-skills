@@ -7,7 +7,7 @@
 #   ./monitor-job.sh $(cat .last_job_id)
 #
 
-set -e
+set -euo pipefail
 
 JOB_ID="${1:-}"
 REGION="${2:-us-central1}"

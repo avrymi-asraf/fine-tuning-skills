@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""
-Submit a training job to Vertex AI with comprehensive configuration options.
-
-Usage:
-    python submit-training-job.py --config job_config.yaml
-    python submit-training-job.py --machine-type a2-highgpu-1g --container-uri gcr.io/proj/image:tag
-"""
-
 # /// script
+# requires-python = ">=3.12"
 # dependencies = [
-#   "google-cloud-aiplatform>=1.38.0",
-#   "pyyaml>=6.0",
-#   "click>=8.0",
+#     "google-cloud-aiplatform>=1.38.0",
+#     "pyyaml>=6.0",
 # ]
 # ///
+"""
+Submit a Vertex AI custom training job from a YAML config or CLI arguments.
+
+Usage:
+    uv run scripts/submit-training-job.py --config job_config.yaml
+    uv run scripts/submit-training-job.py --config job_config.yaml --use-spot --dry-run
+    uv run scripts/submit-training-job.py --container-uri gcr.io/proj/image:tag -m a2-highgpu-1g -a NVIDIA_TESLA_A100 --accelerator-count 1
+"""
 
 import argparse
 import json
@@ -23,15 +23,10 @@ import yaml
 from datetime import datetime
 from pathlib import Path
 
-try:
-    from google.cloud import aiplatform
-except ImportError:
-    print("Error: google-cloud-aiplatform not installed")
-    print("Run: pip install google-cloud-aiplatform")
-    sys.exit(1)
+from google.cloud import aiplatform
 
 
-def load_config(config_path: str) -> dict:
+def load_config(config_path):
     """Load YAML or JSON config file."""
     with open(config_path, 'r') as f:
         if config_path.endswith('.json'):
@@ -40,18 +35,18 @@ def load_config(config_path: str) -> dict:
 
 
 def build_worker_pool_spec(
-    machine_type: str,
-    container_uri: str,
-    accelerator_type: str = None,
-    accelerator_count: int = 0,
-    replica_count: int = 1,
-    command: list = None,
-    args: list = None,
-    env: dict = None,
-    boot_disk_type: str = "pd-ssd",
-    boot_disk_size_gb: int = 500,
-) -> dict:
-    """Build a worker pool specification."""
+    machine_type,
+    container_uri,
+    accelerator_type=None,
+    accelerator_count=0,
+    replica_count=1,
+    command=None,
+    args=None,
+    env=None,
+    boot_disk_type="pd-ssd",
+    boot_disk_size_gb=500,
+):
+    """Build a worker pool specification dict for CustomJob."""
     spec = {
         "machine_spec": {"machine_type": machine_type},
         "replica_count": replica_count,
@@ -61,11 +56,11 @@ def build_worker_pool_spec(
             "boot_disk_size_gb": boot_disk_size_gb,
         },
     }
-    
+
     if accelerator_type and accelerator_count > 0:
         spec["machine_spec"]["accelerator_type"] = accelerator_type
         spec["machine_spec"]["accelerator_count"] = accelerator_count
-    
+
     if command:
         spec["container_spec"]["command"] = command
     if args:
@@ -74,23 +69,24 @@ def build_worker_pool_spec(
         spec["container_spec"]["env"] = [
             {"name": k, "value": str(v)} for k, v in env.items()
         ]
-    
+
     return spec
 
 
-def submit_job(config: dict, project: str = None, location: str = None) -> aiplatform.CustomJob:
-    """Submit a CustomJob to Vertex AI."""
-    
-    # Initialize Vertex AI
+def submit_job(config, project=None, location=None):
+    """Submit a CustomJob to Vertex AI. Returns the job object."""
     project = project or os.environ.get("GOOGLE_CLOUD_PROJECT")
     location = location or config.get("location", "us-central1")
-    
+
     if not project:
-        raise ValueError("Project ID required. Set GOOGLE_CLOUD_PROJECT or pass --project.")
-    
+        print("Error: project ID required. Set GOOGLE_CLOUD_PROJECT or pass --project.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Project: {project}", file=sys.stderr)
+    print(f"Region:  {location}", file=sys.stderr)
+
     aiplatform.init(project=project, location=location)
-    
-    # Build worker pool specs
+
     worker_pool_specs = []
     for pool in config.get("worker_pool_specs", [config]):
         spec = build_worker_pool_spec(
@@ -106,20 +102,17 @@ def submit_job(config: dict, project: str = None, location: str = None) -> aipla
             boot_disk_size_gb=pool.get("boot_disk_size_gb", 500),
         )
         worker_pool_specs.append(spec)
-    
-    # Build job
+
     display_name = config.get("display_name", f"training-job-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
-    
+
     job_specs = {
         "display_name": display_name,
         "worker_pool_specs": worker_pool_specs,
     }
-    
-    # Add base output directory
+
     if "base_output_dir" in config:
         job_specs["base_output_dir"] = config["base_output_dir"]
-    
-    # Add scheduling config
+
     scheduling = config.get("scheduling", {})
     if scheduling.get("use_spot") or scheduling.get("strategy") == "SPOT":
         job_specs["scheduling"] = {
@@ -127,28 +120,19 @@ def submit_job(config: dict, project: str = None, location: str = None) -> aipla
             "max_wait_duration": scheduling.get("max_wait_duration", "3600s"),
         }
     elif "timeout" in scheduling:
-        job_specs["scheduling"] = {
-            "timeout": scheduling["timeout"],
-        }
-    
-    # Add labels
+        job_specs["scheduling"] = {"timeout": scheduling["timeout"]}
+
     if "labels" in config:
         job_specs["labels"] = config["labels"]
-    
-    # Add service account
     if "service_account" in config:
         job_specs["service_account"] = config["service_account"]
-    
-    # Add tensorboard
     if "tensorboard" in config:
         job_specs["tensorboard"] = config["tensorboard"]
-    
-    # Create and run job
+
     job = aiplatform.CustomJob(**job_specs)
-    
     sync = config.get("sync", False)
     job.run(sync=sync)
-    
+
     return job
 
 
@@ -168,10 +152,8 @@ def main():
     parser.add_argument("--env", "-e", action="append", help="Environment variables (KEY=VALUE)")
     parser.add_argument("--save-job-id", default=".last_job_id", help="File to save job ID")
     parser.add_argument("--dry-run", action="store_true", help="Print config without submitting")
-    
     args = parser.parse_args()
-    
-    # Build config from args or file
+
     if args.config:
         config = load_config(args.config)
     else:
@@ -185,7 +167,7 @@ def main():
             "scheduling": {},
             "env": {},
         }
-    
+
     # Apply CLI overrides
     if args.container_uri:
         config["container_uri"] = args.container_uri
@@ -201,38 +183,33 @@ def main():
         for env_var in args.env:
             key, value = env_var.split("=", 1)
             config.setdefault("env", {})[key] = value
-    
-    # Validate
+
     if not config.get("container_uri"):
         parser.error("--container-uri is required (or set in config file)")
-    
+
     if args.dry_run:
-        print("Configuration:")
         print(json.dumps(config, indent=2))
-        return
-    
-    # Submit job
+        sys.exit(0)
+
     try:
-        print(f"Submitting job '{config['display_name']}' to {args.location}...")
+        print(f"Submitting job '{config.get('display_name', 'unnamed')}'...", file=sys.stderr)
         job = submit_job(config, args.project, args.location)
-        
+
         job_id = job.resource_name.split("/")[-1]
-        print(f"\n✅ Job submitted successfully!")
-        print(f"   Job ID: {job_id}")
-        print(f"   Resource: {job.resource_name}")
-        print(f"   State: {job.state}")
-        
-        # Save job ID for monitoring
+        print(f"Job submitted: {job_id}", file=sys.stderr)
+        print(f"Resource: {job.resource_name}", file=sys.stderr)
+        print(f"State: {job.state}", file=sys.stderr)
+
         if args.save_job_id:
             Path(args.save_job_id).write_text(job_id)
-            print(f"   Job ID saved to: {args.save_job_id}")
-        
-        print(f"\nMonitor with:")
-        print(f"   gcloud ai custom-jobs describe {job_id} --region={args.location}")
-        print(f"   gcloud ai custom-jobs stream-logs {job_id} --region={args.location}")
-        
+            print(f"Job ID saved to: {args.save_job_id}", file=sys.stderr)
+
+        print(f"\nMonitor with:", file=sys.stderr)
+        print(f"  gcloud ai custom-jobs describe {job_id} --region={args.location}", file=sys.stderr)
+        print(f"  gcloud ai custom-jobs stream-logs {job_id} --region={args.location}", file=sys.stderr)
+
     except Exception as e:
-        print(f"\n❌ Error submitting job: {e}", file=sys.stderr)
+        print(f"Error submitting job: {e}", file=sys.stderr)
         sys.exit(1)
 
 

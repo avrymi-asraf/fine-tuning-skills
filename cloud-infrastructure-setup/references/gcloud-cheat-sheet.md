@@ -283,6 +283,22 @@ export CLOUDSDK_COMPUTE_REGION=us-central1
 export CLOUDSDK_COMPUTE_ZONE=us-central1-a
 ```
 
+## GPU Availability by Region
+
+| Region | GPUs Available | Notes |
+|--------|---------------|-------|
+| `us-central1` | A100, L4, T4 | Good availability |
+| `us-west1` | A100, L4, T4 | Good availability |
+| `us-east1` | L4, T4 | Limited A100 |
+| `europe-west4` | A100, L4, T4 | Netherlands |
+| `europe-west1` | L4, T4 | Belgium |
+| `asia-east1` | A100, T4 | Taiwan |
+
+Check current availability:
+```bash
+gcloud compute accelerator-types list --filter="zone:us-central1-a"
+```
+
 ## Quick Troubleshooting
 
 ```bash

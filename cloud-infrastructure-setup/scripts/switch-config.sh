@@ -1,10 +1,11 @@
 #!/bin/bash
-# switch-config.sh - Easily switch between gcloud configurations for multi-project setups
-#
-# Usage: ./switch-config.sh [config-name]
-#        ./switch-config.sh --list
+# Purpose: Switch between gcloud configurations for multi-project setups
+# Usage:   ./switch-config.sh [config-name]
+#          ./switch-config.sh --list
+#          ./switch-config.sh --create <name> [project-id] [region]
+# Example: ./switch-config.sh prod
 
-set -e
+set -euo pipefail
 
 list_configs() {
     echo "Available gcloud configurations:"
@@ -17,10 +18,10 @@ switch_config() {
     
     # Check if config exists
     if ! gcloud config configurations list --format="value(name)" | grep -q "^${config_name}$"; then
-        echo "Error: Configuration '$config_name' does not exist"
-        echo ""
-        echo "Available configurations:"
-        gcloud config configurations list --format="value(name)"
+        echo "Error: Configuration '$config_name' does not exist" >&2
+        echo "" >&2
+        echo "Available configurations:" >&2
+        gcloud config configurations list --format="value(name)" >&2
         exit 1
     fi
     
@@ -58,8 +59,8 @@ case "${1:-}" in
         list_configs
         ;;
     --create|-c)
-        if [ -z "$2" ]; then
-            echo "Usage: $0 --create <config-name> [project-id] [region]"
+        if [ -z "${2:-}" ]; then
+            echo "Usage: $0 --create <config-name> [project-id] [region]" >&2
             exit 1
         fi
         create_config "$2" "${3:-}" "${4:-us-central1}"

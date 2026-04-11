@@ -4,7 +4,7 @@ description: Deploy and run ML models on Google Cloud compute infrastructure. Co
 ---
 
 <google-cloud-compute-ml>
-Deploy and manage GPU-enabled compute instances for ML workloads on Google Cloud. This skill bridges account setup (`google-cloud-account`) and actual model training.
+Deploy and manage GPU-enabled compute instances for ML workloads on Google Cloud. This skill bridges infrastructure setup (`cloud-infrastructure-setup`) and actual model training.
 
 **Workflow:** Create GPU VM → Connect/transfer files → Setup environment → Run training → Stop to save money
 
@@ -14,7 +14,7 @@ Deploy and manage GPU-enabled compute instances for ML workloads on Google Cloud
 
 **Scripts:** Seven bash scripts in `scripts/` handle all operations. Run any script without arguments to see available commands.
 
-**Prerequisites:** Complete `google-cloud-account` skill first — authenticated gcloud CLI, project with billing, enabled APIs.
+**Prerequisites:** Complete `cloud-infrastructure-setup` skill first — authenticated gcloud CLI, project with billing, enabled APIs.
 
 </google-cloud-compute-ml>
 

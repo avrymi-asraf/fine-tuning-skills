@@ -1,19 +1,19 @@
 #!/bin/bash
-# enable-apis.sh - Enable required GCP APIs for ML workloads
-#
-# Usage: ./enable-apis.sh [--all|--core|--ml|--storage]
+# Purpose: Enable required GCP APIs for ML workloads
+# Usage:   ./enable-apis.sh [--all|--core|--ml|--container]
+# Example: ./enable-apis.sh --all
 
-set -e
+set -euo pipefail
 
 PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
 
 if [ -z "$PROJECT_ID" ]; then
-    echo "Error: No project configured. Run: gcloud config set project YOUR_PROJECT_ID"
+    echo "Error: No project configured. Run: gcloud config set project YOUR_PROJECT_ID" >&2
     exit 1
 fi
 
-echo "Enabling APIs for project: $PROJECT_ID"
-echo ""
+echo "Enabling APIs for project: $PROJECT_ID" >&2
+echo "" >&2
 
 # Core APIs needed for any GCP work
 CORE_APIS=(
@@ -48,11 +48,11 @@ ADDITIONAL_APIS=(
 
 enable_api() {
     local api="$1"
-    echo -n "Enabling $api... "
+    echo -n "Enabling $api... " >&2
     if gcloud services enable "$api" --project="$PROJECT_ID" 2>/dev/null; then
-        echo "✓"
+        echo "✓" >&2
     else
-        echo "✗ (may already be enabled or insufficient permissions)"
+        echo "✗ (may already be enabled or insufficient permissions)" >&2
     fi
 }
 
@@ -61,11 +61,11 @@ enable_api_group() {
     shift
     local apis=("$@")
     
-    echo "=== $group_name ==="
+    echo "=== $group_name ===" >&2
     for api in "${apis[@]}"; do
         enable_api "$api"
     done
-    echo ""
+    echo "" >&2
 }
 
 case "${1:---core}" in
@@ -88,19 +88,19 @@ case "${1:---core}" in
         enable_api_group "Additional APIs" "${ADDITIONAL_APIS[@]}"
         ;;
     *)
-        echo "Usage: $0 [--all|--core|--ml|--storage|--container]"
-        echo ""
-        echo "Options:"
-        echo "  --core      Enable core APIs (compute, storage, logging)"
-        echo "  --ml        Enable ML APIs (Vertex AI, BigQuery, Notebooks)"
-        echo "  --storage   Enable storage APIs"
-        echo "  --container Enable container/build APIs (Artifact Registry, Cloud Build)"
-        echo "  --all       Enable all recommended APIs (default)"
+        echo "Usage: $0 [--all|--core|--ml|--storage|--container]" >&2
+        echo "" >&2
+        echo "Options:" >&2
+        echo "  --core      Enable core APIs (compute, storage, logging)" >&2
+        echo "  --ml        Enable ML APIs (Vertex AI, BigQuery, Notebooks)" >&2
+        echo "  --storage   Enable storage APIs" >&2
+        echo "  --container Enable container/build APIs (Artifact Registry, Cloud Build)" >&2
+        echo "  --all       Enable all recommended APIs (default)" >&2
         exit 1
         ;;
 esac
 
-echo "API enablement complete!"
-echo ""
-echo "To verify enabled APIs:"
-echo "  gcloud services list --enabled"
+echo "API enablement complete!" >&2
+echo "" >&2
+echo "To verify enabled APIs:" >&2
+echo "  gcloud services list --enabled" >&2
