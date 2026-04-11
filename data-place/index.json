@@ -1,0 +1,22 @@
+[
+  {
+    "id": "few-shot-fine-tuning-techniques-overview",
+    "title": "Few-Shot Fine-Tuning Techniques Overview",
+    "filename": "Few-Shot Fine-Tuning Techniques Overview.pdf",
+    "added_date": "2026-04-11",
+    "source": "Google Docs",
+    "size_bytes": 364651,
+    "format": "PDF",
+    "topics": ["few-shot learning", "fine-tuning", "LLM training"]
+  },
+  {
+    "id": "few-shot-parameter-efficient-fine-tuning-is-better",
+    "title": "Few-Shot Parameter-Efficient Fine-Tuning is Better",
+    "filename": "Few-Shot_Parameter-Efficient_Fine-Tuning_is_Better.pdf",
+    "added_date": "2026-04-11",
+    "source": "Academic paper",
+    "size_bytes": 544245,
+    "format": "PDF",
+    "topics": ["few-shot learning", "PEFT", "LoRA", "parameter-efficient fine-tuning"]
+  }
+]

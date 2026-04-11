@@ -1,0 +1,50 @@
+# Example Vertex AI Custom Job Configuration
+# Use with: python submit-training-job.py --config example-job-config.yaml
+
+# Job metadata
+display_name: llama-finetuning-job
+
+# Worker pool configuration
+worker_pool_specs:
+  - machine_type: a2-highgpu-1g
+    accelerator_type: NVIDIA_TESLA_A100
+    accelerator_count: 1
+    replica_count: 1
+    container_uri: gcr.io/YOUR_PROJECT/training:v1
+    command:
+      - python
+      - train.py
+    args:
+      - --config
+      - /gcs/configs/training_config.yaml
+      - --model
+      - meta-llama/Llama-2-7b-hf
+    env:
+      MODEL_NAME: meta-llama/Llama-2-7b-hf
+      BATCH_SIZE: "4"
+      EPOCHS: "3"
+      LEARNING_RATE: "2e-5"
+      HF_TOKEN: ""  # Will be set via Secret Manager
+    boot_disk_type: pd-ssd
+    boot_disk_size_gb: 500
+
+# Output location (AIP_MODEL_DIR in container)
+base_output_dir: gs://YOUR_BUCKET/outputs/${JOB_NAME}
+
+# Scheduling configuration
+scheduling:
+  use_spot: true           # Use Spot VMs for cost savings (60-91% off)
+  max_wait_duration: 3600s  # Wait up to 1 hour for capacity
+  timeout: 86400s          # Max 24 hours runtime
+
+# Optional: Service account
+# service_account: training-sa@YOUR_PROJECT.iam.gserviceaccount.com
+
+# Optional: Labels for cost tracking
+labels:
+  project: llm-finetuning
+  team: ml-research
+  environment: development
+
+# Don't wait for job completion
+sync: false

@@ -1,0 +1,138 @@
+# Example Training Configuration
+# Usage: python train.py --config config.yaml
+# Or load programmatically and pass to TrainingArguments
+
+# Model Configuration
+model:
+  model_id: "meta-llama/Llama-2-7b-hf"
+  tokenizer_id: null  # Use model_id if null
+  trust_remote_code: false
+
+# Dataset Configuration
+dataset:
+  name: "tatsu-lab/alpaca"
+  config: null
+  split: "train"
+  text_field: "text"
+  max_samples: null  # Use all samples if null
+  
+  # Preprocessing
+  min_length: 10
+  max_length: 4096
+  filter_empty: true
+  deduplicate: false
+
+# Training Configuration
+training:
+  # Output
+  output_dir: "./results"
+  
+  # Training duration
+  num_epochs: 3
+  max_steps: -1  # Override epochs if > 0
+  
+  # Batch configuration
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 8
+  
+  # Learning rate
+  learning_rate: 2.0e-4
+  lr_scheduler: "cosine"  # linear, cosine, constant, polynomial, inverse_sqrt
+  warmup_ratio: 0.03
+  warmup_steps: 0  # Override ratio if > 0
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Precision
+  bf16: true
+  fp16: false
+  
+  # Memory optimization
+  gradient_checkpointing: true
+  group_by_length: true
+  
+  # Optimizer
+  optim: "adamw_torch_fused"  # adamw_torch, paged_adamw_8bit, galore_adamw
+  
+  # Logging
+  logging_steps: 10
+  log_level: "info"
+  
+  # Checkpointing
+  save_strategy: "steps"  # steps, epoch
+  save_steps: 500
+  save_total_limit: 3
+  load_best_model_at_end: true
+  
+  # Evaluation
+  eval_strategy: "steps"
+  eval_steps: 500
+  eval_dataset: null  # Separate eval dataset
+  eval_split: "test"
+  
+  # Experiment tracking
+  report_to: "tensorboard"  # none, tensorboard, wandb
+  run_name: null
+  
+  # Other
+  seed: 42
+  dataloader_num_workers: 4
+  remove_unused_columns: false
+
+# LoRA Configuration
+lora:
+  enabled: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:  # Auto-detected if null
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  use_rslora: false  # Rank-stabilized LoRA
+
+# Quantization Configuration
+quantization:
+  load_in_4bit: false
+  load_in_8bit: false
+  bnb_4bit_quant_type: "nf4"  # nf4, fp4
+  bnb_4bit_compute_dtype: "bfloat16"  # float16, bfloat16, float32
+  bnb_4bit_use_double_quant: true
+
+# Attention Configuration
+attention:
+  implementation: "flash_attention_2"  # eager, sdpa, flash_attention_2
+  
+# Generation Configuration (for validation)
+generation:
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repetition_penalty: 1.0
+  do_sample: true
+
+# DeepSpeed Configuration (optional)
+deepspeed:
+  enabled: false
+  config_path: "ds_config.json"
+
+# FSDP Configuration (optional)
+fsdp:
+  enabled: false
+  strategy: "full_shard"  # full_shard, shard_grad_op
+  cpu_offload: false
+  
+# Weights & Biases Configuration
+wandb:
+  project: "llm-fine-tuning"
+  entity: null  # Your W&B username/team
+  tags: ["lora", "llama"]
+  notes: null

@@ -1,0 +1,167 @@
+# Dockerignore for ML containers
+# Prevents unnecessary files from being copied into the container
+# which bloats the image and breaks layer caching
+
+# =============================================================================
+# Version Control
+# =============================================================================
+.git
+.gitignore
+.gitattributes
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
+MANIFEST
+
+# =============================================================================
+# Virtual Environments
+# =============================================================================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# =============================================================================
+# IDEs and Editors
+# =============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# =============================================================================
+# Testing and Coverage
+# =============================================================================
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# =============================================================================
+# Documentation
+# =============================================================================
+*.md
+!README.md
+LICENSE
+AUTHORS
+CHANGELOG
+*.rst
+docs/
+
+# =============================================================================
+# Jupyter Notebooks
+# =============================================================================
+.ipynb_checkpoints
+*.ipynb
+
+# =============================================================================
+# ML Specific
+# =============================================================================
+# Model checkpoints and artifacts (large files)
+checkpoints/
+models/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Training outputs
+outputs/
+logs/
+wandb/
+runs/
+experiments/
+
+# Data files (should be mounted or downloaded)
+data/
+datasets/
+*.csv
+*.json
+*.jsonl
+*.parquet
+*.arrow
+
+# Weights & Biases
+wandb/
+
+# =============================================================================
+# Docker specific
+# =============================================================================
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# =============================================================================
+# Cloud
+# =============================================================================
+cloudbuild.yaml
+*.yaml
+*.yml
+!config.yaml
+
+# =============================================================================
+# Scripts that shouldn't be in container
+# =============================================================================
+scripts/build*.sh
+scripts/test*.sh
+scripts/validate*.sh
+
+# =============================================================================
+# Secrets (NEVER include these)
+# =============================================================================
+*.pem
+*.key
+*.crt
+credentials.json
+service-account*.json
+.env*
+secrets/
+
+# =============================================================================
+# Misc
+# =============================================================================
+*.log
+*.tmp
+*.bak
+*.old
+*.orig
+
+# Keep these files
+!requirements*.txt
+!pyproject.toml
+!setup.py
+!setup.cfg

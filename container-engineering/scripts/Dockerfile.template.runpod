@@ -1,0 +1,70 @@
+# RunPod / Serverless GPU Container Template
+# 
+# RunPod uses a special structure where your handler.py receives jobs
+# This template is for RunPod serverless endpoints
+#
+# Reference: https://docs.runpod.io/serverless/workers/overview
+
+# =============================================================================
+# Base Image - Use CUDA runtime matching RunPod's GPU types
+# =============================================================================
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+# Install Python and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    python3.11-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install PyTorch with CUDA 12.4
+RUN pip install --no-cache-dir --upgrade pip wheel
+RUN pip install --no-cache-dir \
+    torch==2.5.1 \
+    torchvision==0.20.1 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Install RunPod SDK and ML libraries
+RUN pip install --no-cache-dir \
+    runpod \
+    transformers>=4.46.0 \
+    accelerate>=1.0.0
+
+# =============================================================================
+# Set working directory
+# =============================================================================
+WORKDIR /workspace
+
+# Copy handler
+COPY handler.py /workspace/handler.py
+
+# RunPod looks for handler.py or uses the command below
+CMD ["python", "-u", "handler.py"]
+
+# =============================================================================
+# Example handler.py
+# =============================================================================
+# import runpod
+# import torch
+# from transformers import AutoModelForCausalLM, AutoTokenizer
+#
+# # Load model once at startup
+# model = AutoModelForCausalLM.from_pretrained("model-name").cuda()
+# tokenizer = AutoTokenizer.from_pretrained("model-name")
+#
+# def handler(event):
+#     """Handle RunPod serverless requests"""
+#     prompt = event["input"]["prompt"]
+#     
+#     inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+#     outputs = model.generate(**inputs, max_new_tokens=100)
+#     result = tokenizer.decode(outputs[0])
+#     
+#     return {"output": result}
+#
+# runpod.serverless.start({"handler": handler})
+# =============================================================================

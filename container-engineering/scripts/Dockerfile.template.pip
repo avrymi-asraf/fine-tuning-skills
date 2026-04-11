@@ -1,0 +1,92 @@
+# =============================================================================
+# Dockerfile.template.pip - Standard pip-based ML container
+# =============================================================================
+# Traditional Dockerfile using pip with BuildKit cache mounts.
+# Use this if uv is not available or for maximum compatibility.
+#
+# Features:
+#   - Multi-stage build for smaller images
+#   - BuildKit cache mounts for faster rebuilds
+#   - CUDA 12.4 with PyTorch
+#   - Non-root user
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# STAGE 1: Builder
+# -----------------------------------------------------------------------------
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+
+# Install Python and pip
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    python3.11-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Upgrade pip and install wheel for faster installs
+RUN pip install --no-cache-dir --upgrade pip wheel
+
+# Install PyTorch with CUDA
+RUN pip install --no-cache-dir \
+    torch==2.5.1 \
+    torchvision==0.20.1 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Install other dependencies with cache mount for faster rebuilds
+COPY requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r /tmp/requirements.txt
+
+# -----------------------------------------------------------------------------
+# STAGE 2: Runtime
+# -----------------------------------------------------------------------------
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS runtime
+
+# Security: Non-root user
+RUN groupadd -r trainer && useradd -r -g trainer trainer
+
+# Copy virtual environment
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
+
+# Runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+COPY --chown=trainer:trainer . /workspace
+USER trainer
+
+CMD ["python", "--version"]
+
+# =============================================================================
+# Example requirements.txt to use with this Dockerfile:
+# =============================================================================
+#
+# # Core ML
+# transformers>=4.46.0
+# accelerate>=1.0.0
+# peft>=0.13.0
+# datasets>=3.0.0
+# bitsandbytes>=0.44.0
+# 
+# # Training utilities
+# wandb
+# tensorboard
+# 
+# # Data processing
+# numpy<2.0
+# pandas
+# pillow
+# 
+# # Utilities
+# pyyaml
+# tqdm
+# =============================================================================

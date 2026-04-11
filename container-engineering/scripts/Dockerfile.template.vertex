@@ -1,0 +1,136 @@
+# =============================================================================
+# Dockerfile.template.vertex - Optimized for Google Cloud Vertex AI
+# =============================================================================
+# Special considerations for Vertex AI custom training jobs:
+#   - Must handle Vertex AI's mounted GCS paths
+#   - Environment variables for output locations
+#   - Entrypoint that accepts command-line arguments
+#   - Non-root user (Vertex AI security requirement)
+#
+# Reference: https://cloud.google.com/vertex-ai/docs/training/containers-overview
+# =============================================================================
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+# =============================================================================
+# System Setup
+# =============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    python3.11-venv \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# Vertex AI Environment Variables
+# These are set by Vertex AI at runtime
+# =============================================================================
+# AIP_MODEL_DIR - GCS path where model artifacts should be saved
+# AIP_TENSORBOARD_LOG_DIR - GCS path for TensorBoard logs
+# AIP_CHECKPOINT_DIR - GCS path for checkpoints
+# AIP_DATA_DIR - GCS path for input data
+# =============================================================================
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Create virtual environment
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# =============================================================================
+# Install Dependencies
+# =============================================================================
+RUN pip install --upgrade pip wheel
+
+# PyTorch with CUDA 12.4
+RUN pip install \
+    torch==2.5.1 \
+    torchvision==0.20.1 \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# Training frameworks
+RUN pip install \
+    transformers==4.46.0 \
+    accelerate==1.0.0 \
+    peft==0.13.0 \
+    datasets==3.0.0 \
+    bitsandbytes==0.44.0 \
+    trl==0.11.0
+
+# Cloud integrations
+RUN pip install \
+    google-cloud-storage \
+    google-cloud-logging \
+    wandb
+
+# =============================================================================
+# Security: Non-root user (Vertex AI requirement)
+# =============================================================================
+RUN groupadd -r trainer -g 1000 && \
+    useradd -r -g trainer -u 1000 trainer && \
+    mkdir -p /workspace && \
+    chown -R trainer:trainer /workspace
+
+WORKDIR /workspace
+
+# =============================================================================
+# Copy Training Code
+# =============================================================================
+COPY --chown=trainer:trainer train.py /workspace/
+COPY --chown=trainer:trainer src/ /workspace/src/
+
+# =============================================================================
+# Switch to non-root user
+# =============================================================================
+USER trainer
+
+# =============================================================================
+# Entrypoint
+# Vertex AI passes arguments via the command line
+# =============================================================================
+ENTRYPOINT ["python", "train.py"]
+
+# Default args (can be overridden when submitting job)
+CMD ["--help"]
+
+# =============================================================================
+# Example Vertex AI Job Submission:
+# =============================================================================
+#
+# gcloud ai custom-jobs create \
+#   --region=us-central1 \
+#   --display-name=my-training-job \
+#   --worker-pool-spec=\
+#     machine-type=n1-standard-8,\
+#     accelerator-type=NVIDIA_TESLA_T4,\
+#     accelerator-count=1,\
+#     replica-count=1,\
+#     container-image-uri=us-central1-docker.pkg.dev/PROJECT/ml-containers/my-training:latest \
+#   --args=--model-name=meta-llama/Llama-3.1-8B \
+#   --args=--epochs=3 \
+#   --args=--batch-size=4 \
+#   --args=--output-dir=$AIP_MODEL_DIR
+#
+# =============================================================================
+# Alternative: Using Python SDK
+# =============================================================================
+#
+# from google.cloud import aiplatform
+#
+# job = aiplatform.CustomContainerTrainingJob(
+#     display_name="my-training-job",
+#     container_uri="us-central1-docker.pkg.dev/PROJECT/ml-containers/my-training:latest",
+# )
+#
+# job.run(
+#     machine_type="n1-standard-8",
+#     accelerator_type="NVIDIA_TESLA_T4",
+#     accelerator_count=1,
+#     args=["--epochs=3", "--batch-size=4"],
+# )
+# =============================================================================

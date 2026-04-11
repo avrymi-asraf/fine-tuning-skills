@@ -12,6 +12,7 @@ I am a personal assistant dedicated to writing and maintaining these skills. My 
 |-------|---------|---------------|
 | `google-cloud-account` | GCP account setup: auth, billing, IAM, APIs, quotas | None |
 | `google-cloud-compute-ml` | Deploy and run ML models on GCP compute: GPU VMs, SSH, file transfer, Unsloth setup | `google-cloud-account` |
+| `container-engineering` | Build optimized, reproducible GPU containers for ML training | `google-cloud-account` |
 
 ## Repository Structure
 
@@ -49,6 +50,13 @@ fine-tuning-skills/
                     ├── main.tf
                     ├── variables.tf
                     └── outputs.tf
+└── container-engineering/       # Skill: ML container optimization
+    ├── SKILL.md
+    ├── README.md
+    └── scripts/
+        ├── build-and-push.sh    
+        ├── test-container-locally.sh
+        └── validate-cuda.sh
 ```
 
 ## Skill Conventions
@@ -69,3 +77,15 @@ fine-tuning-skills/
 ---
 
 *I maintain this repository. If you find issues or want new capabilities, let me know.*
+
+## General Agent Skills
+
+**IMPORTANT:** The agent MUST ALWAYS use the external skills located in `/home/avreymi/code/dotfiles/skills`.
+
+| Skill Description | Skill Path |
+|-------------------|------------|
+| Parse and interpret `.chatreplay.json` files (captures the full agentic session) | `/home/avreymi/code/dotfiles/skills/chatreplay` |
+| Jira workflow — read, search, create, and update issues, commit with ticket references | `/home/avreymi/code/dotfiles/skills/jira-workflow` |
+| Create and implement MCP tools for CDN management | `/home/avreymi/code/dotfiles/skills/manage-mcp` |
+| Update, create, fix or improve Agent Skills (SKILL.md files) | `/home/avreymi/code/dotfiles/skills/manage-skills` |
+| Guides creation of clear, operational scripts in Python and JavaScript for AWS/CDN work | `/home/avreymi/code/dotfiles/skills/scripts` |

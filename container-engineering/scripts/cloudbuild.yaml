@@ -1,0 +1,109 @@
+# Cloud Build Configuration for ML Containers
+# 
+# Usage:
+#   gcloud builds submit --config cloudbuild.yaml
+#
+# Features:
+#   - Multi-stage build with layer caching
+#   - Automatic tagging with git commit SHA and 'latest'
+#   - Artifact Registry integration
+#   - BuildKit for faster builds
+
+steps:
+  # Step 1: Build the container image
+  # Uses layer caching from previous builds to speed up subsequent builds
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--cache-from'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:cache'
+      - '--build-arg'
+      - 'BUILDKIT_INLINE_CACHE=1'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$COMMIT_SHA'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:cache'
+      - '-f'
+      - '${_DOCKERFILE}'
+      - '.'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+
+  # Step 2: Push all tags to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}'
+      - '--all-tags'
+
+  # Optional Step 3: Run vulnerability scan
+  # Uncomment to enable Container Analysis scanning
+  # - name: 'gcr.io/cloud-builders/gcloud'
+  #   args:
+  #     - 'artifacts'
+  #     - 'docker'
+  #     - 'images'
+  #     - 'scan'
+  #     - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$COMMIT_SHA'
+
+# Build options
+options:
+  # Machine type - larger machines build faster
+  # Options: N1_HIGHCPU_8, N1_HIGHCPU_32, E2_HIGHCPU_32, N1_HIGHCPU_64
+  machineType: 'N1_HIGHCPU_32'
+  
+  # Disk size for build
+  diskSizeGb: '100'
+  
+  # Logging options
+  logging: CLOUD_LOGGING_ONLY
+  
+  # Enable BuildKit
+  env:
+    - 'DOCKER_BUILDKIT=1'
+
+# Substitution variables (override with --substitutions=_KEY=value)
+substitutions:
+  _REGION: us-central1
+  _REPO: ml-containers
+  _IMAGE: training-gpu
+  _DOCKERFILE: Dockerfile
+
+# Images to be pushed
+images:
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$COMMIT_SHA'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest'
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:cache'
+
+# Timeout for the entire build
+timeout: '1200s'  # 20 minutes
+
+# =============================================================================
+# ALTERNATIVE: Simple cloudbuild.yaml (no caching)
+# =============================================================================
+# Use this for first-time builds or if caching causes issues
+#
+# steps:
+#   - name: 'gcr.io/cloud-builders/docker'
+#     args: ['build', '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest', '.']
+#   - name: 'gcr.io/cloud-builders/docker'
+#     args: ['push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest']
+# images:
+#   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:latest'
+# =============================================================================
+
+# =============================================================================
+# Build Triggers (set up via gcloud or console)
+# =============================================================================
+#
+# Create a trigger for automatic builds on git push:
+#
+# gcloud builds triggers create github \
+#   --repo-name=YOUR_REPO \
+#   --repo-owner=YOUR_USERNAME \
+#   --branch-pattern='main' \
+#   --build-config='cloudbuild.yaml'
+#
+# =============================================================================
