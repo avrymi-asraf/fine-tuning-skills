@@ -102,19 +102,27 @@ check_apis() {
 check_quotas() {
   local PROJECT="$1"
   local REGION="$2"
-  section "GPU & Compute Quotas in $REGION ($PROJECT)"
+  section "Compute Engine GPU Quotas in $REGION ($PROJECT)"
   gcloud compute regions describe "$REGION" \
     --project="$PROJECT" \
     --format="yaml(quotas)" 2>/dev/null \
     | grep -A2 -i "gpu\|accelerator\|nvidia" \
-    || warn "No GPU quotas found in $REGION. Request an increase via Console > IAM & Admin > Quotas."
+    || warn "No Compute Engine GPU quotas found in $REGION."
 
-  section "Vertex AI Quotas"
-  gcloud services quota list \
+  section "Vertex AI Training GPU Quotas ($PROJECT)"
+  info "Vertex AI training uses separate quota metrics (e.g. custom_model_training_nvidia_t4_gpus)."
+  info "These default to 0 and must be requested separately from Compute Engine GPU quotas."
+  # Try to list Vertex AI quotas — requires aiplatform API enabled
+  if gcloud services quota list \
     --service=aiplatform.googleapis.com \
     --consumer="project:$PROJECT" 2>/dev/null \
-    | head -40 \
-    || warn "Could not retrieve Vertex AI quotas. Ensure aiplatform.googleapis.com is enabled."
+    | grep -i "custom_model_training\|gpu" | head -20; then
+    :
+  else
+    warn "Could not retrieve Vertex AI training quotas via CLI."
+    info "Check manually: Console > IAM & Admin > Quotas > filter 'custom_model_training'"
+    info "URL: https://console.cloud.google.com/iam-admin/quotas?project=$PROJECT&pageState=%28%22allQuotasTable%22:%28%22f%22:%22%255B%257B_22k_22_3A_22_22_2C_22t_22_3A10_2C_22v_22_3A_22_27custom_model_training_27_22%257D%255D%22%29%29"
+  fi
 }
 
 check_iam() {

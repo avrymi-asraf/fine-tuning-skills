@@ -23,7 +23,11 @@ This skill covers setting up and managing GCP infrastructure for ML training —
 - `scripts/gcp_diagnose.sh` — Full health diagnostic, targeted checks (auth, billing, APIs, quotas, IAM)
 
 **Scripts (one-shot utilities):**
-- `scripts/setup-gcloud.sh`, `scripts/enable-apis.sh`, `scripts/check-permissions.sh`, `scripts/set-env.sh`, `scripts/switch-config.sh`, `scripts/create-budget-alert.sh`
+- `scripts/setup-gcloud.sh` — Installs gcloud if missing, full setup flow
+- `scripts/set-env.sh` — Environment variable template — copy to `.env` and source
+- `scripts/check-permissions.sh` — Verify IAM roles, APIs, quotas, resource access
+
+**Approach:** Write the full command with actual variable names. Let the user run it, read the output together, and decide next steps based on what happened. For simple commands (API enablement, config switching, budget creation) — use the gcloud CLI directly, no script needed.
 
 **References:** `references/gcloud-cheat-sheet.md`, `references/iam-roles-reference.md`, `references/cost-management-guide.md`, `references/troubleshooting.md`, `references/documentation-links.md`
 
@@ -56,11 +60,12 @@ Or use the one-shot script (also installs gcloud if missing):
 ./scripts/gcp_iam.sh sa_grant my-project ml-training-sa@my-project.iam.gserviceaccount.com roles/aiplatform.user
 ```
 
-**Config profiles** to switch between projects instantly:
+**Config profiles** to switch between projects — use `gcloud config configurations` directly:
 ```bash
-./scripts/gcp_auth.sh profile_create dev
-./scripts/gcp_auth.sh profile_activate dev
-./scripts/gcp_auth.sh set_region us-central1
+gcloud config configurations create dev          # create new config
+gcloud config set project my-ml-project-dev      # set project in it
+gcloud config set compute/region us-central1     # set region
+gcloud config configurations activate prod       # switch to another config
 ```
 </gcloud-setup>
 
@@ -72,25 +77,30 @@ Or use the one-shot script (also installs gcloud if missing):
 ./scripts/gcp_projects.sh set_default my-ml-project
 ```
 
-**Enable APIs** — use the grouped utility or the subcommand script:
+**Enable APIs** — use `gcloud services enable` directly:
 ```bash
-./scripts/enable-apis.sh --all                                    # one-shot: all groups
+# All required ML APIs at once
+gcloud services enable \
+  aiplatform.googleapis.com \
+  compute.googleapis.com \
+  storage.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  logging.googleapis.com \
+  monitoring.googleapis.com
+```
+
+Run it. The output confirms each API enabled. If you get a permissions error, the billing account may not be linked. APIs take 1–2 minutes to propagate. Verify:
+```bash
+gcloud services list --enabled | grep aiplatform
+```
+
+Or use the subcommand script for single APIs:
+```bash
 ./scripts/gcp_projects.sh apis_enable my-project aiplatform.googleapis.com storage.googleapis.com
 ```
 
-**Essential ML APIs** (enabled by `full_setup` and `enable-apis.sh --all`):
-
-| API | Purpose |
-|-----|---------|
-| `aiplatform.googleapis.com` | Vertex AI training, prediction, TensorBoard |
-| `compute.googleapis.com` | VMs, GPUs, networking |
-| `storage.googleapis.com` | GCS buckets for data and artifacts |
-| `artifactregistry.googleapis.com` | Container image storage |
-| `cloudbuild.googleapis.com` | CI/CD container builds |
-| `logging.googleapis.com` | Training job logs |
-| `monitoring.googleapis.com` | Metrics and dashboards |
-
-APIs take 1–2 minutes to propagate after enabling.
+See `references/gcloud-cheat-sheet.md` for API groups (core, ML, container, infrastructure).
 </project-and-apis>
 
 <iam-and-service-accounts>
@@ -133,8 +143,8 @@ Key variables: `GCP_PROJECT_ID`, `GCP_REGION`, `GCS_BUCKET`, `TRAINING_SERVICE_A
 
 **Multi-project setups** — use gcloud configurations:
 ```bash
-./scripts/switch-config.sh --create dev my-ml-project-dev us-central1
-./scripts/switch-config.sh prod   # activate prod
+gcloud config configurations create dev && gcloud config set project my-ml-project-dev && gcloud config set compute/region us-central1
+gcloud config configurations activate prod       # switch back
 ```
 
 Always verify the active project before expensive operations: `gcloud config get-value project`.
@@ -143,18 +153,25 @@ Always verify the active project before expensive operations: `gcloud config get
 <cost-controls>
 ML training costs are dominated by GPU compute (70–90%). See `references/cost-management-guide.md` for GPU pricing tables, checkpointing code, and automated cost control.
 
-**Budget alerts:**
+**Budget alerts** — use `gcloud billing budgets create` directly:
 ```bash
-./scripts/create-budget-alert.sh BILLING_ACCOUNT_ID 1000 my-ml-project
-./scripts/gcp_projects.sh budget_create BILLING_ACCOUNT_ID "ML Budget" 1000
+gcloud billing budgets create \
+  --billing-account=XXXXXX-XXXXXX-XXXXXX \
+  --display-name="ML Training Budget" \
+  --budget-amount=1000USD \
+  --threshold-rule=percent=50 \
+  --threshold-rule=percent=80 \
+  --threshold-rule=percent=100
 ```
 
-**Spot VMs** — 60–70% savings, but can be preempted. Always implement checkpointing:
-```bash
-gcloud ai custom-jobs create ... --scheduling-strategy=SPOT
-```
+Run it. The output shows the budget ID. If it fails, you need billing administrator permissions. Find your billing account ID with: `gcloud billing accounts list`.
 
-**Quotas** — GPU quotas default to 0 in most regions. Request increases 2–3 business days ahead:
+Or use the subcommand: `./scripts/gcp_projects.sh budget_create BILLING_ACCOUNT_ID "ML Budget" 1000`
+
+**Spot VMs** — 60–70% savings, but can be preempted. Always implement checkpointing.
+Spot cannot be set via gcloud CLI flags. Use YAML config (`scheduling: { strategy: SPOT }`) or the `cloud-job-orchestration` skill's `submit-training-job.py --use-spot`.
+
+**Quotas** — GPU quotas default to 0 in most regions. Vertex AI training uses separate quotas from Compute Engine (e.g. `custom_model_training_nvidia_t4_gpus`). Request increases 2–3 business days ahead:
 ```bash
 ./scripts/gcp_projects.sh quota_check my-project us-central1
 ```
@@ -178,6 +195,8 @@ For quick permission checks, use the one-shot script:
 ./scripts/check-permissions.sh sa@project.iam.gserviceaccount.com
 ```
 
+**Always check quotas before submitting GPU training jobs.** Vertex AI training GPU quota (`custom_model_training_nvidia_*_gpus`) is separate from Compute Engine GPU quota and defaults to 0. Run quota diagnostics first to avoid repeated `RESOURCE_EXHAUSTED` failures.
+
 Full diagnostic workflows for specific error cases in `references/troubleshooting.md`.
 </diagnostics>
 
@@ -186,7 +205,7 @@ Full diagnostic workflows for specific error cases in `references/troubleshootin
 |-------|-------|-----|
 | `403 Forbidden` / `PERMISSION_DENIED` | Missing IAM role | `./scripts/gcp_diagnose.sh iam my-project` → grant missing roles |
 | `DefaultCredentialsError` | No ADC configured | `./scripts/gcp_auth.sh adc` |
-| `API has not been used` | API not enabled | `./scripts/gcp_diagnose.sh apis my-project` |
+| `API has not been used` | API not enabled | `gcloud services enable aiplatform.googleapis.com` |
 | `QUOTA_EXCEEDED` | GPU/CPU quota limit | `./scripts/gcp_diagnose.sh quotas my-project us-central1` |
 | `Billing not enabled` | No billing linked | `./scripts/gcp_projects.sh billing_link my-project XXXXXX` |
 | `invalid_grant: Token expired` | Stale credentials | `./scripts/gcp_auth.sh login` + `./scripts/gcp_auth.sh adc` |
@@ -216,20 +235,19 @@ When debugging, start with: `./scripts/gcp_diagnose.sh full my-project`
 
 **One-shot utility scripts:**
 
-| Script | Run without args | Purpose |
-|---|---|---|
-| `setup-gcloud.sh` | shows usage | Install gcloud, auth, project config, APIs, SA, bucket |
-| `enable-apis.sh` | shows usage | Enable GCP APIs by group (`--core`, `--ml`, `--all`) |
-| `check-permissions.sh` | checks current user | Verify IAM roles, APIs, quotas, resource access |
-| `set-env.sh` | — (template) | Environment variable template — copy to `.env` and source |
-| `switch-config.sh` | shows current config | Create/list/switch gcloud configurations |
-| `create-budget-alert.sh` | shows usage | Create billing budget with threshold alerts |
+| Script | Purpose |
+|---|---|
+| `setup-gcloud.sh` | Install gcloud, auth, project config, APIs, SA, bucket |
+| `check-permissions.sh` | Verify IAM roles, APIs, quotas, resource access |
+| `set-env.sh` | Environment variable template — copy to `.env` and source |
+
+For config switching, API enablement, and budget alerts — use `gcloud` directly. Commands in `references/gcloud-cheat-sheet.md`.
 </cloud-infrastructure-setup-scripts>
 
 <cloud-infrastructure-setup-reference>
 | File | Contents |
 |---|---|
-| `references/gcloud-cheat-sheet.md` | Quick command reference: auth, projects, IAM, GCS, Vertex AI, quotas, GPU availability by region |
+| `references/gcloud-cheat-sheet.md` | Quick command reference: auth, projects, IAM, GCS, Vertex AI, quotas, API groups, budget alerts, config switching |
 | `references/iam-roles-reference.md` | Predefined roles, permissions per operation, role combinations by use case, custom role YAML |
 | `references/cost-management-guide.md` | GPU pricing, Spot VM implementation, checkpointing code, budget automation, GCS lifecycle policies |
 | `references/troubleshooting.md` | Full diagnostic workflows for auth, API, storage, Vertex AI, network, and billing issues |
@@ -242,17 +260,17 @@ When debugging, start with: `./scripts/gcp_diagnose.sh full my-project`
 **Step 1 — Create project with billing and APIs:**
 ```bash
 ./scripts/gcp_projects.sh full_setup my-ml-project XXXXXX-XXXXXX-XXXXXX
-# Creates project, links billing, sets default, enables all required APIs
 ```
+Read the output — it creates project, links billing, enables APIs, creates SA. If any step fails, the error tells you what's missing.
 
-**Step 2 — Set up authentication:**
+**Step 2 — Authenticate:**
 ```bash
 ./scripts/gcp_auth.sh login
 ./scripts/gcp_auth.sh adc
-./scripts/gcp_auth.sh set_region us-central1
+gcloud config set compute/region us-central1
 ```
 
-**Step 3 — Create service account and grant roles:**
+**Step 3 — Service account roles:**
 ```bash
 ./scripts/gcp_auth.sh sa_create my-ml-project ml-training-sa
 ./scripts/gcp_iam.sh sa_grant my-ml-project \
@@ -261,15 +279,13 @@ When debugging, start with: `./scripts/gcp_diagnose.sh full my-project`
   ml-training-sa@my-ml-project.iam.gserviceaccount.com roles/storage.admin
 ```
 
-**Step 4 — Run full diagnostic:**
-```bash
-./scripts/gcp_diagnose.sh full my-ml-project
-# ✓ Authentication, ✓ Billing, ✓ APIs, ✓ IAM, ✓ Quotas
-```
+**Step 4 — Diagnose:** `./scripts/gcp_diagnose.sh full my-ml-project` — each check shows ✓ or ✗.
 
-**Step 5 — Set budget alert:**
+**Step 5 — Budget alert:**
 ```bash
-./scripts/gcp_projects.sh budget_create XXXXXX-XXXXXX-XXXXXX "ML Budget" 500
+gcloud billing budgets create --billing-account=XXXXXX-XXXXXX-XXXXXX \
+  --display-name="ML Budget" --budget-amount=500USD \
+  --threshold-rule=percent=50 --threshold-rule=percent=80 --threshold-rule=percent=100
 ```
 
 **Common mistake — ADC not set up:**

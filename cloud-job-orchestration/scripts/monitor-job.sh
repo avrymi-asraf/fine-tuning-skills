@@ -12,6 +12,7 @@ set -euo pipefail
 JOB_ID="${1:-}"
 REGION="${2:-us-central1}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
+LOG_PID=""
 
 # Colors for output
 RED='\033[0;31m'

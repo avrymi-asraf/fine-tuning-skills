@@ -76,16 +76,76 @@ gsutil du -sh gs://BUCKET/                     # Total size
 
 ## Common Patterns
 
+### Upload with Git Metadata Tagging
+```bash
+# Single file
+gcloud storage cp model.pt gs://BUCKET/models/ \
+  --custom-metadata=git-commit=$(git rev-parse --short HEAD) \
+  --custom-metadata=git-branch=$(git rev-parse --abbrev-ref HEAD) \
+  --custom-metadata=upload-time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Recursive directory upload
+gcloud storage cp -r ./experiment-output/ gs://BUCKET/experiments/run-001/ \
+  --custom-metadata=git-commit=$(git rev-parse --short HEAD)
+
+# Upload with specific storage class
+gcloud storage cp --storage-class=NEARLINE ./old-data gs://BUCKET/archive/
+```
+
+### Compress and Upload
+```bash
+# Compress a directory, then upload the archive
+tar -czf - ./checkpoints/ | gcloud storage cp - gs://BUCKET/checkpoints/run-001.tar.gz
+
+# gzip transport encoding (smaller transfer, stored decompressed)
+gcloud storage cp -Z file.json gs://BUCKET/
+```
+
+### Download
+```bash
+# Single file
+gcloud storage cp gs://BUCKET/models/model.pt ./model.pt
+
+# Recursive directory
+gcloud storage cp -r gs://BUCKET/experiments/run-001/ ./local-run/
+
+# Download and verify checksum
+gcloud storage cp gs://BUCKET/model.pt ./model.pt
+sha256sum ./model.pt    # compare with expected hash
+
+# Download and extract archive
+gcloud storage cp gs://BUCKET/models/archive.tar.gz ./
+tar -xzf archive.tar.gz -C ./models/
+```
+
+### Sync Directories
+```bash
+# Local → GCS (upload new/changed files)
+gcloud storage rsync -r ./outputs gs://BUCKET/outputs
+
+# GCS → Local (download new/changed files)
+gcloud storage rsync -r gs://BUCKET/checkpoints ./local-checkpoints
+
+# Mirror: delete destination files not in source
+gcloud storage rsync -r --delete-unmatched-destination-objects ./data gs://BUCKET/data
+
+# Exclude patterns
+gcloud storage rsync -r --exclude-name-pattern="*.tmp" ./logs gs://BUCKET/logs
+
+# Dry run — see what would change
+gcloud storage rsync -r --dry-run ./outputs gs://BUCKET/outputs
+```
+
 ### Stream Data
 ```bash
 cat data.txt | gcloud storage cp - gs://BUCKET/data.txt
 gcloud storage cp gs://BUCKET/data.txt - | wc -l
 ```
 
-### Compress on Upload
+### Bucket Size
 ```bash
-tar -czf - data/ | gcloud storage cp - gs://BUCKET/data.tar.gz
-gcloud storage cp -Z file.json gs://BUCKET/    # -Z = gzip encoding
+gcloud storage du -sh gs://BUCKET/
+gcloud storage ls -r -l gs://BUCKET/ | tail -1
 ```
 
 ### Environment Variables

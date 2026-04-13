@@ -1,512 +1,251 @@
 ---
 name: ml-training-pipeline
-description: Complete ML fine-tuning pipeline with TRL, PEFT, and PyTorch. Covers dataset preparation (HF Hub, custom data, format conversion), chat template formatting for tool calling and conversations, model loading strategies (BF16, quantization, Flash Attention, SDPA), parameter-efficient training (LoRA/QLoRA, freezing layers), training configuration (hyperparameters, schedulers, optimizers, checkpointing), SFTTrainer/Trainer/Accelerate patterns, gated model access (HF_TOKEN), debugging OOM/CUDA errors, and monitoring with W&B/TensorBoard. Use when implementing LLM fine-tuning workflows, preparing training data, configuring training jobs, debugging training failures, or optimizing memory usage.
+description: Fine-tune LLMs with TRL, PEFT, and PyTorch. Covers dataset preparation (HF Hub, format conversion, chat templates), model loading (BF16, quantization, Flash Attention), LoRA/QLoRA configuration, SFTTrainer training execution, and OOM debugging. Use when implementing fine-tuning workflows, preparing training data, configuring LoRA, debugging CUDA errors, or optimizing GPU memory.
 ---
 
-# ML Training Pipeline
+<ml-training-pipeline>
+This skill covers the complete workflow for fine-tuning large language models — from raw data to a trained adapter — using HuggingFace TRL, PEFT, and Transformers.
 
-Complete guide to fine-tuning Large Language Models using modern tools and best practices.
+**What's covered:**
+- `<data-preparation>` — Loading datasets, format conversion (Alpaca/ShareGPT → chat messages), applying chat templates with `prepare-dataset.py`
+- `<model-loading>` — Precision (BF16), attention backends (Flash Attention 2, SDPA), quantization (4-bit/8-bit), gated model access
+- `<lora-configuration>` — LoRA/QLoRA setup, rank selection, target modules per architecture
+- `<training-execution>` — SFTTrainer, hyperparameters, optimizers, checkpointing with `train.py` and `config.yaml`
+- `<debugging>` — OOM quick fixes, gradient issues, slow training diagnosis
+- `<examples>` — End-to-end workflow: prepare data → load model → configure LoRA → train → validate
 
-## Overview
+**Scripts:** `scripts/train.py` (main training), `scripts/prepare-dataset.py` (data preprocessing), `scripts/validate-model.py` (inference testing), `scripts/config.yaml` (config template)
+**References:** `references/chat-templates.md`, `references/peft-patterns.md`, `references/oom-debugging.md`, `references/memory-optimization.md`, `references/official-docs.md`
 
-This skill provides workflows for the complete ML training lifecycle:
-1. **Data Preparation** — Load, format, and validate training data
-2. **Model Setup** — Load with optimal settings (precision, attention, quantization)
-3. **Training Configuration** — LoRA/QLoRA, hyperparameters, optimizers
-4. **Execution** — Run training with proper monitoring and checkpointing
-5. **Debugging** — Diagnose and fix common failures
+**Core libraries:** `torch`, `transformers`, `datasets`, `peft`, `trl`, `bitsandbytes`, `accelerate`
+Install: `pip install torch transformers datasets accelerate peft trl bitsandbytes`
+Optional: `pip install flash-attn --no-build-isolation` (Flash Attention), `pip install wandb` (tracking)
 
-## Quick Start
+**Approach:** Write the full command with actual variable names and model paths. Let the user run it, read the output together. Training logs show loss curves, learning rate, and throughput — read them to decide if the run is healthy.
+</ml-training-pipeline>
 
-```python
-from trl import SFTTrainer
-from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-# 1. Load model with memory-efficient settings
-model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-2-7b-hf",
-    torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
-    device_map="auto",
-)
-
-# 2. Configure LoRA
-peft_config = LoraConfig(
-    r=16, lora_alpha=32, target_modules=["q_proj", "v_proj"],
-    lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"
-)
-
-# 3. Train with SFTTrainer
-trainer = SFTTrainer(
-    model=model,
-    train_dataset=dataset,
-    peft_config=peft_config,
-    max_seq_length=2048,
-)
-trainer.train()
-```
-
-## Prerequisites
+<data-preparation>
+Use `scripts/prepare-dataset.py` for all dataset preprocessing. Run without arguments to see usage.
 
 ```bash
-pip install torch transformers datasets accelerate peft trl bitsandbytes
-pip install flash-attn --no-build-isolation  # Optional: Flash Attention
-pip install wandb  # Optional: experiment tracking
+# Convert Alpaca-format dataset to chat messages
+python scripts/prepare-dataset.py --dataset tatsu-lab/alpaca --format chat --output ./data/
+
+# Apply a model's chat template during conversion
+python scripts/prepare-dataset.py --dataset tatsu-lab/alpaca --format chat --tokenizer meta-llama/Llama-2-7b-hf --output ./data/
+
+# Local files with train/val split
+python scripts/prepare-dataset.py --dataset json --data_files ./raw/data.json --format chat --output ./data/
 ```
 
-## Dataset Preparation
+The script handles: Alpaca → chat, ShareGPT → chat, deduplication (`--deduplicate`), length filtering (`--min_length`, `--max_length`), and train/val splitting (`--train_split 0.9`).
 
-### Loading from HuggingFace Hub
+**Chat template formatting** — always use the model's native template via `tokenizer.apply_chat_template()`. This handles special tokens correctly per architecture (Llama, Mistral, Qwen). For tool-calling datasets, pass `tools=` to `apply_chat_template`. See `references/chat-templates.md` for model-specific formats and tool calling examples.
 
-```python
-from datasets import load_dataset
-
-# Standard dataset
-dataset = load_dataset("tatsu-lab/alpaca", split="train")
-
-# Gated dataset (requires HF_TOKEN)
-dataset = load_dataset("nvidia/OpenMathInstruct-1", split="train")
-
-# With streaming for large datasets
-dataset = load_dataset("bigcode/the-stack", streaming=True, split="train")
-```
-
-### Format Conversion
-
-**Conversations format (standard):**
-```python
-def format_conversation(example):
-    return {
-        "messages": [
-            {"role": "system", "content": example["instruction"]},
-            {"role": "user", "content": example["input"]},
-            {"role": "assistant", "content": example["output"]}
-        ]
-    }
-
-dataset = dataset.map(format_conversation)
-```
-
-**Text completion format:**
-```python
-def format_text(example):
-    text = f"### Instruction:\n{example['instruction']}\n\n### Response:\n{example['output']}"
-    return {"text": text}
-```
-
-### Chat Templates & Tool Calling
-
-Apply the model's chat template for proper formatting:
-
-```python
-def apply_chat_template(example, tokenizer):
-    messages = example["messages"]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=False
-    )
-    return {"text": text}
-
-# With tool calling support
-tools = [{
-    "type": "function",
-    "function": {
-        "name": "get_weather",
-        "description": "Get weather for a location",
-        "parameters": {...}
-    }
-}]
-
-text = tokenizer.apply_chat_template(
-    messages,
-    tools=tools,
-    tokenize=False
-)
-```
-
-See `references/chat-templates.md` for complete tool calling examples.
-
-## Model Loading Strategies
-
-### Precision & Attention
-
-```python
-from transformers import AutoModelForCausalLM, BitsAndBytesConfig
-
-# BF16 + Flash Attention 2 (recommended)
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    torch_dtype=torch.bfloat16,
-    attn_implementation="flash_attention_2",
-    device_map="auto",
-)
-
-# 4-bit quantization with QLoRA
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_use_double_quant=True,
-)
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    quantization_config=bnb_config,
-    device_map="auto",
-    attn_implementation="flash_attention_2",
-)
-
-# 8-bit quantization (middle ground)
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    load_in_8bit=True,
-    device_map="auto",
-)
-```
-
-### Freezing Strategies
-
-```python
-# Freeze vision encoder (multimodal models)
-for param in model.vision_tower.parameters():
-    param.requires_grad = False
-
-# Freeze embedding layers
-model.get_input_embeddings().requires_grad_(False)
-
-# Freeze specific layers (e.g., first half)
-for layer in model.model.layers[:16]:
-    for param in layer.parameters():
-        param.requires_grad = False
-```
-
-## Parameter-Efficient Fine-Tuning
-
-### LoRA Configuration
-
-```python
-from peft import LoraConfig, get_peft_model, TaskType
-
-# Standard LoRA for LLMs
-lora_config = LoraConfig(
-    r=16,                    # Rank (4-128, higher = more params)
-    lora_alpha=32,           # Scaling (usually 2*r)
-    target_modules=[         # Modules to adapt
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj"
-    ],
-    lora_dropout=0.05,
-    bias="none",
-    task_type=TaskType.CAUSAL_LM,
-)
-
-model = get_peft_model(model, lora_config)
-model.print_trainable_parameters()  # Verify % of trainable params
-```
-
-### QLoRA (4-bit + LoRA)
-
-```python
-from transformers import BitsAndBytesConfig
-from peft import prepare_model_for_kbit_training
-
-# 1. Load in 4-bit
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_use_double_quant=True,
-)
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    quantization_config=bnb_config,
-    device_map="auto",
-)
-
-# 2. Prepare for training
-model = prepare_model_for_kbit_training(model)
-
-# 3. Apply LoRA
-model = get_peft_model(model, lora_config)
-```
-
-### LoRA Hyperparameter Guide
-
-| Parameter | Range | Notes |
-|-----------|-------|-------|
-| `r` (rank) | 4-128 | Higher = more capacity, more memory |
-| `lora_alpha` | 8-256 | Usually 2× rank |
-| `lora_dropout` | 0.0-0.1 | Regularization |
-| `target_modules` | varies | See below for common patterns |
-
-**Common target_modules by model:**
-- Llama/Qwen: `["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]`
-- GPT-2: `["c_attn", "c_proj", "c_fc"]`
-- Mistral: Same as Llama
-
-See `references/peft-patterns.md` for advanced PEFT strategies.
-
-## Training Configuration
-
-### Hyperparameters
-
-```python
-training_args = TrainingArguments(
-    # Batch sizes
-    per_device_train_batch_size=1,      # Reduce if OOM
-    gradient_accumulation_steps=8,      # Effective batch = 8
-    
-    # Training length
-    num_train_epochs=3,
-    max_steps=-1,  # Override epochs if set
-    
-    # Learning rate
-    learning_rate=2e-4,  # LoRA: 1e-4 to 5e-4
-    lr_scheduler_type="cosine",
-    warmup_ratio=0.03,
-    
-    # Optimization
-    optim="paged_adamw_8bit",  # QLoRA
-    # optim="adamw_torch",      # Standard
-    
-    # Logging & Checkpointing
-    logging_steps=10,
-    save_strategy="steps",
-    save_steps=500,
-    eval_strategy="steps",
-    eval_steps=500,
-    
-    # Memory
-    gradient_checkpointing=True,
-    bf16=True,  # Use fp16 if no BF16 support
-    
-    # Output
-    output_dir="./results",
-    report_to="wandb",  # or "tensorboard"
-)
-```
-
-### Optimizer Selection
-
-| Optimizer | Use Case | Notes |
-|-----------|----------|-------|
-| `adamw_torch` | Standard training | Default, reliable |
-| `paged_adamw_8bit` | QLoRA | Reduces memory |
-| `paged_adamw_32bit` | Full fine-tune | Lower memory than standard |
-| `galore_adamw` | Full fine-tune large models | Gradient low-rank projection |
-
-### Scheduler Types
-
-- `linear` (default): Linear decay after warmup
-- `cosine`: Cosine annealing, often better convergence
-- `constant`: No decay
-- `polynomial`: Polynomial decay
-- `inverse_sqrt`: Good for transformers
-
-## SFTTrainer Usage
-
-### Basic Training
-
-```python
-from trl import SFTTrainer
-
-trainer = SFTTrainer(
-    model=model,
-    tokenizer=tokenizer,
-    train_dataset=train_dataset,
-    eval_dataset=eval_dataset,
-    peft_config=lora_config,  # Optional: for LoRA
-    max_seq_length=2048,
-    dataset_text_field="text",  # Field containing formatted text
-    args=training_args,
-)
-
-trainer.train()
-trainer.save_model("./final_model")
-```
-
-### With Data Collator
-
+**Training only on completions** — use `DataCollatorForCompletionOnlyLM` to mask user turns and compute loss only on assistant responses:
 ```python
 from trl import DataCollatorForCompletionOnlyLM
-
-# Only compute loss on assistant responses
-collator = DataCollatorForCompletionOnlyLM(
-    tokenizer=tokenizer,
-    response_template="### Response:\n",  # Mark assistant starts
-)
-
-trainer = SFTTrainer(
-    ...,
-    data_collator=collator,
-)
+collator = DataCollatorForCompletionOnlyLM(response_template="### Response:\n", tokenizer=tokenizer)
 ```
 
-## Monitoring & Logging
+Run `prepare-dataset.py`. Read the output — it reports dataset size, format, split counts, and any rows removed by filtering. Check these numbers make sense before training.
+</data-preparation>
 
-### Weights & Biases
-
+<model-loading>
+**Standard loading (BF16 + Flash Attention 2)** — the recommended default:
 ```python
-import wandb
-
-# Login (or set WANDB_API_KEY env var)
-wandb.login()
-
-# Initialize run
-wandb.init(
-    project="llm-fine-tuning",
-    name="llama2-7b-lora-v1",
-    config={
-        "model": "meta-llama/Llama-2-7b-hf",
-        "lora_r": 16,
-        "learning_rate": 2e-4,
-    }
-)
-
-# In TrainingArguments
-report_to="wandb"
-```
-
-### TensorBoard
-
-```bash
-tensorboard --logdir ./results/runs
-```
-
-### Custom Callbacks
-
-```python
-from transformers import TrainerCallback
-
-class MemoryCallback(TrainerCallback):
-    def on_step_end(self, args, state, control, **kwargs):
-        if state.global_step % 100 == 0:
-            allocated = torch.cuda.memory_allocated() / 1e9
-            print(f"Step {state.global_step}: {allocated:.2f}GB allocated")
-```
-
-## Debugging Common Issues
-
-### CUDA Out of Memory (OOM)
-
-**Immediate fixes:**
-1. Reduce `per_device_train_batch_size` to 1
-2. Increase `gradient_accumulation_steps`
-3. Enable `gradient_checkpointing=True`
-4. Reduce `max_seq_length`
-5. Use smaller LoRA rank (`r`)
-
-**Advanced:**
-```python
-# Enable memory efficient attention
-attn_implementation="flash_attention_2"  # or "sdpa"
-
-# Use DeepSpeed ZeRO-3 for sharding
-deepspeed_config = {
-    "zero_optimization": {
-        "stage": 3,
-        "offload_optimizer": {"device": "cpu"},
-    },
-    "train_batch_size": "auto",
-}
-```
-
-See `references/oom-debugging.md` for detailed memory profiling.
-
-### Gradient Issues
-
-```python
-# Gradient clipping
-training_args.max_grad_norm = 1.0
-
-# Check for NaN/Inf
-training_args.ddp_find_unused_parameters = False
-```
-
-### Slow Training
-
-- Ensure `bf16=True` (2× faster than fp32 on Ampere+)
-- Use Flash Attention 2
-- Check GPU utilization: `nvidia-smi dmon`
-- Profile with PyTorch profiler
-
-## Training Script Best Practices
-
-See `scripts/train.py` for a complete, adaptable template.
-
-### Environment Variable Configuration
-
-```python
-import os
-
-# Model & data
-MODEL_ID = os.getenv("MODEL_ID", "meta-llama/Llama-2-7b-hf")
-DATASET_NAME = os.getenv("DATASET_NAME", "tatsu-lab/alpaca")
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./results")
-
-# Training
-LEARNING_RATE = float(os.getenv("LEARNING_RATE", "2e-4"))
-NUM_EPOCHS = int(os.getenv("NUM_EPOCHS", "3"))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1"))
-GRAD_ACCUM = int(os.getenv("GRAD_ACCUM", "8"))
-MAX_SEQ_LENGTH = int(os.getenv("MAX_SEQ_LENGTH", "2048"))
-
-# LoRA
-LORA_R = int(os.getenv("LORA_R", "16"))
-LORA_ALPHA = int(os.getenv("LORA_ALPHA", "32"))
-```
-
-### Checkpoint Resumption
-
-```python
-# Auto-resume from latest checkpoint
-last_checkpoint = None
-if os.path.isdir(output_dir) and len(os.listdir(output_dir)) > 0:
-    last_checkpoint = get_last_checkpoint(output_dir)
-
-trainer.train(resume_from_checkpoint=last_checkpoint)
-```
-
-## Accelerate Integration
-
-```bash
-# Launch config
-accelerate config
-
-# Multi-GPU training
-accelerate launch --num_processes=4 train.py
-
-# DeepSpeed integration
-accelerate launch --deepspeed_config ds_config.json train.py
-```
-
-## Gated Model Access
-
-```python
-import os
-from huggingface_hub import login
-
-# Method 1: Environment variable
-# export HF_TOKEN=your_token
-
-# Method 2: Login programmatically
-login(token=os.getenv("HF_TOKEN"))
-
-# Method 3: Use token in from_pretrained
 model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-2-7b-hf",
-    token=os.getenv("HF_TOKEN"),
-    ...
+    model_id,
+    torch_dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
+    device_map="auto",
 )
 ```
+Use `attn_implementation="sdpa"` if Flash Attention is unavailable (older GPUs). Use `"eager"` only for debugging.
 
-## Resources
+**4-bit quantization (QLoRA)** — fits large models on smaller GPUs:
+```python
+from transformers import BitsAndBytesConfig
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=True,
+)
+model = AutoModelForCausalLM.from_pretrained(model_id, quantization_config=bnb_config, device_map="auto")
+```
 
-- `scripts/train.py` — Complete training script template
-- `scripts/prepare-dataset.py` — Dataset preprocessing
-- `scripts/validate-model.py` — Quick inference validation
-- `references/chat-templates.md` — Tool calling & formatting
-- `references/peft-patterns.md` — Advanced LoRA/QLoRA
-- `references/oom-debugging.md` — Memory debugging guide
-- `references/official-docs.md` — Links to TRL, Transformers, etc.
+**8-bit** — middle ground: `AutoModelForCausalLM.from_pretrained(model_id, load_in_8bit=True, device_map="auto")`
+
+**Gated models** — set `HF_TOKEN` env var, or call `huggingface_hub.login(token=os.getenv("HF_TOKEN"))` before loading. The `train.py` script reads `HF_TOKEN` automatically.
+
+**Tokenizer** — always set pad token if missing:
+```python
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+```
+</model-loading>
+
+<lora-configuration>
+LoRA adds small trainable matrices to frozen model weights. QLoRA combines 4-bit quantization with LoRA.
+
+**Standard LoRA:**
+```python
+from peft import LoraConfig, get_peft_model, TaskType
+lora_config = LoraConfig(
+    r=16, lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    lora_dropout=0.05, bias="none", task_type=TaskType.CAUSAL_LM,
+)
+model = get_peft_model(model, lora_config)
+model.print_trainable_parameters()
+```
+
+**QLoRA** — load in 4-bit first, then prepare and apply LoRA:
+```python
+from peft import prepare_model_for_kbit_training
+model = prepare_model_for_kbit_training(model)  # after 4-bit loading
+model = get_peft_model(model, lora_config)
+```
+
+**Rank selection:** `r=8-16` for quick experiments, `r=32-64` for complex tasks, `r=128` for maximum quality on large models. Alpha is typically `2×r`. See `references/peft-patterns.md` for rank-by-model-size table and advanced variants (DoRA, AdaLoRA, IA³).
+
+**Target modules by architecture:**
+- Llama/Mistral/Qwen: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
+- GPT-2: `c_attn`, `c_proj`, `c_fc`
+- GPT-NeoX/BLOOM: `query_key_value`, `dense`
+
+The `train.py` script auto-detects target modules from `model.config.model_type`.
+</lora-configuration>
+
+<training-execution>
+Use `scripts/train.py` as the primary training script. Run without arguments to see all options.
+
+```bash
+# LoRA fine-tuning
+python scripts/train.py --model_id meta-llama/Llama-2-7b-hf --dataset tatsu-lab/alpaca --use_lora
+
+# QLoRA (4-bit)
+python scripts/train.py --model_id meta-llama/Llama-2-7b-hf --dataset tatsu-lab/alpaca --load_in_4bit --lora_r 32
+
+# Multi-GPU
+accelerate launch --num_processes=4 scripts/train.py --model_id meta-llama/Llama-2-7b-hf --use_lora
+```
+
+**Key hyperparameters:**
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `--batch_size` | 1 | Reduce first if OOM |
+| `--gradient_accumulation_steps` | 8 | Effective batch = batch_size × this |
+| `--learning_rate` | 2e-4 | LoRA range: 1e-4 to 5e-4 |
+| `--lr_scheduler` | cosine | Usually better convergence than linear |
+| `--num_epochs` | 3 | Or use `--max_steps` |
+| `--max_seq_length` | 2048 | Reduce if OOM |
+
+**Optimizers:** `adamw_torch_fused` (default), `paged_adamw_8bit` (QLoRA — pages optimizer states to CPU).
+
+**Checkpointing:** `--save_steps 500 --save_total_limit 3`. The script auto-resumes from the latest checkpoint if `output_dir` contains one.
+
+**Tracking:** `--report_to wandb` (set `WANDB_API_KEY`) or `--report_to tensorboard`. View TensorBoard logs: `tensorboard --logdir ./results/logs`.
+
+All parameters also configurable via `scripts/config.yaml`. See `references/official-docs.md` for TRL/Transformers/PEFT documentation links.
+
+Run `train.py`. Read the output — early logs show trainable parameter count, dataset size, and estimated training time. Watch the loss: it should decrease steadily. If loss plateaus early or spikes, adjust learning rate.
+</training-execution>
+
+<debugging>
+**OOM — try in order:**
+1. `--batch_size 1` with higher `--gradient_accumulation_steps`
+2. `--gradient_checkpointing` (enabled by default in `train.py`)
+3. Reduce `--max_seq_length` (2048 → 1024)
+4. Reduce `--lora_r` (64 → 16)
+5. Use `--load_in_4bit` (QLoRA)
+6. Set `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to reduce CUDA fragmentation
+
+**Gradient issues:** `--max_grad_norm 1.0` (default). If loss is NaN, check data for empty examples and reduce learning rate.
+
+**Slow training:** Ensure `--bf16` is active (2× faster on Ampere+). Use `--attn_implementation flash_attention_2`. Check GPU utilization with `nvidia-smi dmon`.
+
+**Multi-GPU / large models:** Use DeepSpeed ZeRO-2/3 or FSDP for sharding across GPUs. See `references/memory-optimization.md` for configs and `references/oom-debugging.md` for memory profiling tools.
+
+**Memory reference table (QLoRA, batch=1, seq=2048):**
+
+| Model | VRAM Required |
+|-------|---------------|
+| 7B | ~8-12 GB |
+| 13B | ~14-20 GB |
+| 70B | ~40-48 GB |
+</debugging>
+
+<ml-training-scripts>
+All scripts show usage when run without arguments.
+
+| Script | Purpose |
+|--------|---------|
+| `train.py` | Main training script — LoRA/QLoRA, multi-GPU, all hyperparameters via CLI or env vars |
+| `prepare-dataset.py` | Dataset loading, format conversion, filtering, deduplication, train/val splitting |
+| `validate-model.py` | Quick inference test — single prompt, batch file, or interactive mode; auto-detects LoRA adapters |
+| `config.yaml` | Example training configuration template with all parameters documented |
+</ml-training-scripts>
+
+<ml-training-reference>
+| File | Contents |
+|------|----------|
+| `references/chat-templates.md` | Chat template formats per model (Llama, Mistral, Qwen), tool calling dataset format, response masking |
+| `references/peft-patterns.md` | LoRA rank-by-model-size table, target modules per architecture, advanced variants (DoRA, AdaLoRA), merging adapters |
+| `references/oom-debugging.md` | OOM diagnosis checklist, memory profiling with PyTorch, CUDA snapshot debugging, error-specific solutions |
+| `references/memory-optimization.md` | Technique comparison table, DeepSpeed/FSDP configs, GPU-specific recommendations (24GB/48GB/80GB) |
+| `references/official-docs.md` | Links to TRL, Transformers, PEFT, Accelerate, DeepSpeed, Datasets, BitsAndBytes, W&B documentation |
+</ml-training-reference>
+
+<examples>
+**Scenario:** Fine-tune Llama-2-7B on the Alpaca dataset with LoRA, then validate.
+
+**Step 1 — Prepare data:**
+```bash
+python scripts/prepare-dataset.py \
+    --dataset tatsu-lab/alpaca \
+    --format chat \
+    --tokenizer meta-llama/Llama-2-7b-hf \
+    --output ./data/alpaca-chat
+```
+Read the output — it reports row count, format conversion results, and split sizes. If rows were dropped, check `--min_length` and `--max_length`.
+
+**Step 2 — Train with LoRA:**
+```bash
+python scripts/train.py \
+    --model_id meta-llama/Llama-2-7b-hf \
+    --dataset json --data_files ./data/alpaca-chat/train.jsonl \
+    --use_lora --lora_r 16 --lora_alpha 32 \
+    --learning_rate 2e-4 --num_epochs 3 \
+    --output_dir ./results/llama-alpaca-lora \
+    --report_to tensorboard
+```
+Read the early output — it shows trainable parameters (should be ~0.5-2% of total), dataset size, and steps per epoch. Watch the loss curve.
+
+**Step 3 — Validate the trained model:**
+```bash
+python scripts/validate-model.py \
+    --model_path ./results/llama-alpaca-lora \
+    --prompt "Explain what fine-tuning means in machine learning."
+```
+Read the output — it auto-detects the LoRA adapter and shows the generated text. Compare it with the base model to see if training had an effect.
+
+**Step 4 — Interactive testing:**
+```bash
+python scripts/validate-model.py --model_path ./results/llama-alpaca-lora --interactive
+```
+
+**Common mistake — OOM on a 24GB GPU with defaults:**
+```bash
+# Bad: default seq length is too long for the dataset
+python scripts/train.py --model_id meta-llama/Llama-2-7b-hf --use_lora --max_seq_length 4096
+# → CUDA out of memory
+
+# Good: reduce sequence length and use QLoRA
+python scripts/train.py --model_id meta-llama/Llama-2-7b-hf --load_in_4bit --max_seq_length 2048
+```
+If you hit OOM, read the error — it shows how much memory was requested vs. available. Follow the debugging steps in `<debugging>` in order.
+</examples>

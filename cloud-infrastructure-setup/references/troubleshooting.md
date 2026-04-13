@@ -106,9 +106,12 @@ API has not been used in project PROJECT_ID before or it is disabled
    gcloud services enable aiplatform.googleapis.com
    ```
 
-2. **Enable all required APIs:**
+2. **Enable all required ML APIs:**
    ```bash
-   ./scripts/enable-apis.sh --all
+   gcloud services enable \
+     aiplatform.googleapis.com compute.googleapis.com \
+     storage.googleapis.com artifactregistry.googleapis.com \
+     cloudbuild.googleapis.com logging.googleapis.com monitoring.googleapis.com
    ```
 
 3. **Verify API is enabled:**
@@ -258,12 +261,14 @@ ImagePullBackOff: Back-off pulling image
      --role="roles/artifactregistry.reader"
    ```
 
-### Issue: GPU Not Available
+### Issue: Compute Engine GPU Not Available
 
 **Symptoms:**
 ```
 RESOURCE_EXHAUSTED: Quota 'NVIDIA_TESLA_T4_GPUS' exceeded
 ```
+
+This is a **Compute Engine** quota — applies to GPU VMs created directly.
 
 **Solutions:**
 
@@ -272,20 +277,42 @@ RESOURCE_EXHAUSTED: Quota 'NVIDIA_TESLA_T4_GPUS' exceeded
    gcloud compute regions describe us-central1 | grep -i gpu
    ```
 
-2. **Try different GPU type:**
+2. **Try different GPU type or region:**
    ```bash
-   # Use T4 instead of V100
-   --accelerator-type=NVIDIA_TESLA_T4
+   gcloud compute accelerator-types list --filter="zone:us-central1"
    ```
 
-3. **Try different region:**
+3. **Request quota increase:**
+   - Console → IAM & Admin → Quotas → filter for GPU type
+
+### Issue: Vertex AI Training GPU Quota Exhausted
+
+**Symptoms:**
+```
+RESOURCE_EXHAUSTED: Quota 'custom_model_training_nvidia_t4_gpus' exceeded
+```
+
+This is a **Vertex AI training** quota — separate from Compute Engine GPU quota. Each GPU type has its own training metric (e.g. `custom_model_training_nvidia_t4_gpus`, `custom_model_training_nvidia_a100_gpus`). These default to 0 in most projects.
+
+**Solutions:**
+
+1. **Check Vertex AI training quota:**
    ```bash
-   gcloud config set compute/region us-east1
+   ./scripts/gcp_diagnose.sh quotas PROJECT_ID us-central1
    ```
 
-4. **Request quota increase:**
+2. **Don't try different GPU types blindly** — each training GPU type has a separate quota metric. Check all of them before switching.
+
+3. **Request increase for the specific training metric:**
    - Console → IAM & Admin → Quotas
-   - Filter for "GPUs (all regions)" or specific GPU type
+   - Filter for `custom_model_training` → select the GPU metric → Edit Quotas
+   - Allow 2–3 business days for approval
+
+4. **While waiting for quota** — validate your container with a CPU-only smoke test:
+   ```bash
+   uv run scripts/submit-training-job.py --config my-job.yaml \
+     --machine-type n1-standard-4 --accelerator-count 0
+   ```
 
 ### Issue: Spot VM Preemption Loop
 
@@ -417,9 +444,9 @@ Commands work in one terminal but not another; different projects in different w
    export CLOUDSDK_ACTIVE_CONFIG_NAME=prod
    ```
 
-4. **Use the switch-config script:**
+4. **Switch to correct config:**
    ```bash
-   ./scripts/switch-config.sh prod
+   gcloud config configurations activate prod
    ```
 
 ---
@@ -445,7 +472,13 @@ Billing shows much higher costs than expected.
 
 3. **Set up budget alerts:**
    ```bash
-   ./scripts/create-budget-alert.sh XXXXXX-XXXXXX-XXXXXX 1000
+   gcloud billing budgets create \
+     --billing-account=XXXXXX-XXXXXX-XXXXXX \
+     --display-name="ML Budget" \
+     --budget-amount=1000USD \
+     --threshold-rule=percent=50 \
+     --threshold-rule=percent=80 \
+     --threshold-rule=percent=100
    ```
 
 4. **Review cost breakdown:**

@@ -181,11 +181,22 @@ case "$COMMAND" in
       --format="table(config.name:label=SERVICE,config.title:label=TITLE)"
     ;;
 
-  # 18. Quota Check: Print regional compute quotas — GPU quotas are listed here.
+  # 18. Quota Check: Print regional compute quotas and Vertex AI training quotas.
   quota_check)
     if [ $# -ne 2 ]; then echo "Usage: quota_check <project_id> <region>" >&2; exit 1; fi
-    echo "=== Quotas in $2 (project: $1) ===" >&2
-    gcloud compute regions describe "$2" --project="$1" --format="yaml(quotas)"
+    echo "=== Compute Engine GPU Quotas in $2 (project: $1) ===" >&2
+    gcloud compute regions describe "$2" --project="$1" --format="yaml(quotas)" \
+      | grep -A2 -i "gpu\|accelerator\|nvidia" \
+      || echo "  (no compute GPU quotas found in $2)" >&2
+
+    echo "" >&2
+    echo "=== Vertex AI Training GPU Quotas (project: $1) ===" >&2
+    echo "  Note: These are separate from Compute Engine quotas and default to 0." >&2
+    gcloud services quota list \
+      --service=aiplatform.googleapis.com \
+      --consumer="project:$1" 2>/dev/null \
+      | grep -i "custom_model_training\|gpu" | head -20 \
+      || echo "  Could not retrieve via CLI. Check Console > IAM & Admin > Quotas > filter 'custom_model_training'" >&2
     ;;
 
   # 19. Org Policies: List org-level constraints applied to a project.

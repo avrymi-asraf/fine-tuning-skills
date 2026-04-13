@@ -113,22 +113,35 @@ gcloud iam list-testable-permissions //cloudresourcemanager.googleapis.com/proje
 
 ## Essential ML APIs
 
+Enable all at once or by group:
+
 ```bash
-# Core ML APIs
-gcloud services enable aiplatform.googleapis.com
-gcloud services enable compute.googleapis.com
-gcloud services enable storage.googleapis.com
-gcloud services enable bigquery.googleapis.com
-gcloud services enable notebooks.googleapis.com
+# All ML APIs in one command
+gcloud services enable \
+  aiplatform.googleapis.com \
+  compute.googleapis.com \
+  storage.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com \
+  logging.googleapis.com \
+  monitoring.googleapis.com
 
-# Container/Build APIs
-gcloud services enable artifactregistry.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable container.googleapis.com
+# Core only
+gcloud services enable compute.googleapis.com storage.googleapis.com logging.googleapis.com monitoring.googleapis.com
 
-# Monitoring APIs
-gcloud services enable logging.googleapis.com
-gcloud services enable monitoring.googleapis.com
+# ML-specific
+gcloud services enable aiplatform.googleapis.com bigquery.googleapis.com notebooks.googleapis.com
+
+# Container/Build
+gcloud services enable artifactregistry.googleapis.com cloudbuild.googleapis.com container.googleapis.com
+
+# Infrastructure management
+gcloud services enable cloudresourcemanager.googleapis.com iam.googleapis.com cloudbilling.googleapis.com serviceusage.googleapis.com
+```
+
+APIs take 1–2 minutes to propagate after enabling. Verify:
+```bash
+gcloud services list --enabled | grep aiplatform
 ```
 
 ## GCS (Cloud Storage)
@@ -218,15 +231,28 @@ gcloud compute project-info describe --project=PROJECT_ID
 ## Billing & Budgets
 
 ```bash
+# List billing accounts
+gcloud billing accounts list
+
 # List budgets
 gcloud billing budgets list --billing-account=XXXXXX-XXXXXX-XXXXXX
 
-# Create budget
+# Create budget with multiple threshold alerts
 gcloud billing budgets create \
   --billing-account=XXXXXX-XXXXXX-XXXXXX \
-  --display-name="ML Budget" \
+  --display-name="ML Training Budget" \
   --budget-amount=1000USD \
-  --threshold-rule=percent=80
+  --threshold-rule=percent=50 \
+  --threshold-rule=percent=80 \
+  --threshold-rule=percent=100
+
+# Budget with Pub/Sub notification
+gcloud billing budgets create \
+  --billing-account=XXXXXX-XXXXXX-XXXXXX \
+  --display-name="Budget with Pub/Sub" \
+  --budget-amount=1000USD \
+  --threshold-rule=percent=80 \
+  --pubsub-topic=projects/PROJECT_ID/topics/budget-alerts
 
 # View billing info
 gcloud billing accounts get-iam-policy XXXXXX-XXXXXX-XXXXXX

@@ -10,24 +10,33 @@ This skill covers the full lifecycle of Vertex AI custom training jobs — from 
 - `<job-submission>` — Two ways to submit jobs: Python SDK and gcloud CLI, with config files
 - `<gpu-machine-selection>` — Choosing the right machine type and accelerator for the workload
 - `<spot-and-preemption>` — Spot VMs for cost savings, preemption signals, checkpointing strategy
-- `<job-monitoring>` — Status polling, log streaming, TensorBoard integration
+- `<job-monitoring>` — Status polling, log streaming, cancellation, TensorBoard integration
 - `<cost-estimation>` — Estimating job cost before submission, budget awareness
 - `<environment-and-secrets>` — Vertex AI automatic env vars, Secret Manager integration
 - `<common-pitfalls>` — OOM, queued jobs, container startup failures, data bottlenecks
 - `<examples>` — End-to-end workflow from cost estimate to result download
 
-**Scripts:** `scripts/submit-training-job.py`, `scripts/monitor-job.sh`, `scripts/handle-preemption.sh`, `scripts/cancel-job.sh`, `scripts/cost-estimate.py`, `scripts/example-job-config.yaml`
+**Scripts:** `scripts/submit-training-job.py`, `scripts/monitor-job.sh`, `scripts/handle-preemption.sh`, `scripts/cost-estimate.py`, `scripts/example-job-config.yaml`
 **References:** `references/gpu-machine-types.md`, `references/command-cheat-sheet.md`, `references/documentation-links.md`
+
+**Approach:** Write the full command with actual variable names, let the user run it, read the output together. For simple operations like cancelling a job — use `gcloud` directly, no script needed.
 
 **Prerequisites:** `cloud-infrastructure-setup` (GCP auth, project, APIs, IAM configured). Container image already pushed to Artifact Registry or GCR.
 </cloud-job-orchestration>
 
 <job-submission>
-There are two main approaches. Use whichever fits the workflow.
-
-**Python SDK** — use `scripts/submit-training-job.py` for the full-featured version with config files:
+**Before any GPU job — check quota first.** Vertex AI training uses separate quota metrics from Compute Engine (e.g. `custom_model_training_nvidia_t4_gpus`). A zero quota means every GPU submit will fail with `RESOURCE_EXHAUSTED`:
 ```bash
-# From a YAML config (recommended)
+# Check Vertex AI training + compute GPU quotas
+./cloud-infrastructure-setup/scripts/gcp_diagnose.sh quotas PROJECT_ID us-central1
+```
+If GPU quota is 0, request an increase first (2–3 business days). Meanwhile, validate the container with a **CPU-only smoke test** (see `<examples>`).
+
+There are two submission approaches. Use whichever fits the workflow.
+
+**Python SDK (recommended)** — use `scripts/submit-training-job.py` for config files, automatic `.last_job_id` output, and dry-run support:
+```bash
+# From a YAML config
 uv run scripts/submit-training-job.py --config job_config.yaml
 
 # Inline arguments
@@ -41,21 +50,21 @@ uv run scripts/submit-training-job.py \
 
 The SDK approach (`CustomJob`) takes `worker_pool_specs` — each spec defines machine type, container image, env vars, and disk config. See `scripts/example-job-config.yaml` for a complete config template.
 
-**gcloud CLI** — faster for one-off jobs:
+**gcloud CLI** — faster for one-off jobs, but does **not** write `.last_job_id`:
 ```bash
 gcloud ai custom-jobs create \
   --region=us-central1 \
   --display-name=training-job \
   --config=job_config.yaml
 ```
+Read the output — it prints the job resource name. Extract the job ID for monitoring:
+```bash
+JOB_ID=$(gcloud ai custom-jobs list --region=us-central1 --sort-by=~createTime --limit=1 --format='value(name.split("/").slice(-1))')
+```
 
-The YAML config for gcloud uses camelCase keys (`machineType`, `acceleratorType`, `containerSpec`). See `references/command-cheat-sheet.md` for config file format and full CLI reference.
+The YAML config for gcloud uses camelCase keys (`machineType`, `acceleratorType`, `containerSpec`). See `references/command-cheat-sheet.md` for config file format.
 
-Key SDK classes:
-- `aiplatform.CustomJob` — low-level, full control over worker pool specs
-- `aiplatform.CustomContainerTrainingJob` — higher-level, simpler API with `.run()`
-
-Always call `aiplatform.init(project=PROJECT, location=REGION)` before creating jobs.
+Always call `aiplatform.init(project=PROJECT, location=REGION)` before creating jobs via SDK.
 </job-submission>
 
 <gpu-machine-selection>
@@ -74,7 +83,7 @@ Full tables in `references/gpu-machine-types.md`. Quick decision guide:
 
 For A3/A2/G2 machines, the GPU is fixed to the machine type — don't specify `accelerator_type` separately. For N1 machines, attach GPUs explicitly with `accelerator_type` + `accelerator_count`.
 
-**Region availability** varies. H100s are concentrated in `us-central1`, `europe-west4`, `asia-northeast1`. Check availability with:
+**Region availability** varies. Check with:
 ```bash
 gcloud compute accelerator-types list --filter="zone:us-central1"
 ```
@@ -120,17 +129,21 @@ gcloud ai custom-jobs stream-logs JOB_ID --region=us-central1
 **Use `scripts/monitor-job.sh`** for status polling with elapsed time, status change alerts, and auto-cleanup:
 ```bash
 ./scripts/monitor-job.sh JOB_ID us-central1
-./scripts/monitor-job.sh $(cat .last_job_id)    # works with submit script output
+./scripts/monitor-job.sh $(cat .last_job_id)    # only works after submit-training-job.py
+```
+
+If you submitted via gcloud CLI (no `.last_job_id`), get the job ID first:
+```bash
+JOB_ID=$(gcloud ai custom-jobs list --region=us-central1 --sort-by=~createTime --limit=1 --format='value(name.split("/").slice(-1))')
 ```
 
 **Job states:** `PENDING` → `RUNNING` → `SUCCEEDED` / `FAILED` / `CANCELLED` / `PREEMPTED`. The `PREEMPTING` state means the 30-second shutdown window is active.
 
-**Cancel a job:**
+**Cancel a job** — use `gcloud` directly:
 ```bash
-./scripts/cancel-job.sh JOB_ID us-central1
-# or directly
 gcloud ai custom-jobs cancel JOB_ID --region=us-central1
 ```
+Read the output. Then check the state: `gcloud ai custom-jobs describe JOB_ID --region=us-central1 --format='value(state)'`. If already in a terminal state (`SUCCEEDED`, `FAILED`, `CANCELLED`), no action is needed.
 
 **TensorBoard** — create a TensorBoard instance, then pass its resource name when creating the job:
 ```python
@@ -163,7 +176,7 @@ Quick reference (GPU cost only, approximate):
 | L4 | ~$0.80 | ~$0.24 |
 | T4 | ~$0.35 | ~$0.11 |
 
-Total job cost = (machine + GPU) × hours. The `cost-estimate.py` script includes machine costs. Actual pricing changes — always verify with the [GCP pricing page](https://cloud.google.com/compute/gpus-pricing).
+Total job cost = (machine + GPU) × hours. Actual pricing changes — always verify with the [GCP pricing page](https://cloud.google.com/compute/gpus-pricing).
 </cost-estimation>
 
 <environment-and-secrets>
@@ -180,7 +193,6 @@ Vertex AI injects these env vars into the container automatically:
 **Never hardcode secrets in the container or config.** Use Secret Manager:
 ```python
 from google.cloud import secretmanager
-
 client = secretmanager.SecretManagerServiceClient()
 name = f"projects/{os.environ['CLOUD_ML_PROJECT_ID']}/secrets/hf-token/versions/latest"
 hf_token = client.access_secret_version(request={"name": name}).payload.data.decode("UTF-8")
@@ -193,24 +205,25 @@ Pass custom env vars via the config's `env` field — they're visible in the job
 | Problem | Symptom | Fix |
 |---------|---------|-----|
 | GPU OOM | `CUDA out of memory` | Lower `per_device_train_batch_size`, increase `gradient_accumulation_steps`, enable `gradient_checkpointing` |
+| Vertex AI training GPU quota | `RESOURCE_EXHAUSTED` for `custom_model_training_nvidia_*_gpus` | Check with `gcp_diagnose.sh quotas`. Request increase in Console → IAM → Quotas. Use CPU smoke test while waiting. |
 | Job stuck queued | `PENDING` for hours | Try spot (better availability), different region, request quota increase |
-| Container fails immediately | `FAILED` right after `RUNNING` | Test locally first: `docker run --gpus all IMAGE python -c "import torch; print(torch.cuda.is_available())"` |
+| Container fails immediately | `FAILED` right after `RUNNING` | Test locally: `docker run --gpus all IMAGE python -c "import torch; print(torch.cuda.is_available())"` |
 | Slow training / GPU underused | Low GPU utilization | Increase `dataloader_num_workers`, use `pin_memory=True`, pre-process data |
-| Preemption loop | Repeated preemption | Switch to on-demand, try smaller machine (better spot availability), use reservations |
-| Missing GPU quota | `QUOTA_EXCEEDED` | Request increase in Console → IAM → Quotas (2–3 day lead time) |
+| No `.last_job_id` for monitoring | `cat .last_job_id` fails | Only `submit-training-job.py` writes this file. Extract with: `gcloud ai custom-jobs list --sort-by=~createTime --limit=1 --format='value(name.split("/").slice(-1))'` |
 </common-pitfalls>
 
 <cloud-job-orchestration-scripts>
-All scripts are self-documenting — run without arguments for usage. Shell scripts require `set -euo pipefail`. Python scripts use PEP 723 inline deps and run with `uv run`.
+All scripts are self-documenting — run without arguments for usage.
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/submit-training-job.py` | Submit Vertex AI custom job from YAML config or CLI args. Saves job ID for monitoring. |
-| `scripts/monitor-job.sh` | Poll job status, stream logs, show elapsed time. Handles all terminal states. |
-| `scripts/handle-preemption.sh` | Auto-retry preempted spot jobs with configurable max retries and delay. |
-| `scripts/cancel-job.sh` | Cancel a running job with confirmation prompt. Shows output location for checkpoints. |
-| `scripts/cost-estimate.py` | Estimate cost by machine type, hours, and spot/on-demand. Supports `--compare` and `--list-machines`. |
-| `scripts/example-job-config.yaml` | Template YAML config with all common fields filled in. |
+| `submit-training-job.py` | Submit Vertex AI custom job from YAML config or CLI args. Saves job ID for monitoring. |
+| `monitor-job.sh` | Poll job status, stream logs, show elapsed time. Handles all terminal states. |
+| `handle-preemption.sh` | Auto-retry preempted spot jobs with configurable max retries and delay. |
+| `cost-estimate.py` | Estimate cost by machine type, hours, and spot/on-demand. Supports `--compare` and `--list-machines`. |
+| `example-job-config.yaml` | Template YAML config with all common fields filled in. |
+
+For cancelling jobs — use `gcloud ai custom-jobs cancel JOB_ID --region=REGION` directly. Full CLI reference in `references/command-cheat-sheet.md`.
 </cloud-job-orchestration-scripts>
 
 <cloud-job-orchestration-reference>
@@ -224,44 +237,49 @@ All scripts are self-documenting — run without arguments for usage. Shell scri
 <examples>
 **End-to-end: Fine-tune a 7B model on Vertex AI with Spot VMs.**
 
-**1. Estimate cost:**
+**1. Check quota** — do this before any GPU submission:
+```bash
+./cloud-infrastructure-setup/scripts/gcp_diagnose.sh quotas my-project us-central1
+```
+Read the output — look for `custom_model_training_nvidia_*` metrics. If limit is 0, request increase first.
+
+**2. Estimate cost:**
 ```bash
 uv run scripts/cost-estimate.py --machine-type a2-highgpu-1g --hours 12 --compare
-# Shows on-demand ($44.04) vs Spot ($13.20) — 70% savings
 ```
 
-**2. Prepare config** — copy and edit the template:
+**3. Prepare config** — copy and edit the template:
 ```bash
 cp scripts/example-job-config.yaml my-job.yaml
 # Edit: set container_uri, model name, GCS paths, env vars
 ```
 
-**3. Dry run** — verify config without submitting:
+**4. CPU smoke test** — validate container without GPU quota:
 ```bash
-uv run scripts/submit-training-job.py --config my-job.yaml --dry-run
+uv run scripts/submit-training-job.py --config my-job.yaml \
+  --machine-type n1-standard-4 --accelerator-count 0 --dry-run
+# Review config, then submit (remove --dry-run) to verify the container starts
 ```
 
-**4. Submit with Spot:**
+**5. Submit GPU job** (only after quota confirmed):
 ```bash
 uv run scripts/submit-training-job.py --config my-job.yaml --use-spot
-# Saves job ID to .last_job_id
 ```
 
-**5. Monitor:**
+**6. Monitor:**
 ```bash
 ./scripts/monitor-job.sh $(cat .last_job_id)
-# Streams logs, shows status changes, prints output location on completion
 ```
 
-**6. If preempted**, use the retry handler instead of steps 4–5:
+**7. If preempted**, use the retry handler:
 ```bash
 ./scripts/handle-preemption.sh --config my-job.yaml --max-retries 5
 ```
 
-**7. Download results:**
+**8. Download results:**
 ```bash
-gsutil -m cp -r gs://bucket/outputs/JOB_ID ./results/
+gcloud storage cp -r gs://bucket/outputs/JOB_ID ./results/
 ```
 
-**Common mistake — forgetting checkpointing with Spot:** The job succeeds on attempt 1 but gets preempted on attempt 2, losing all progress. Always set `save_strategy="steps"` and use `AIP_CHECKPOINT_DIR` so retries resume from the last checkpoint.
+**Common mistake — submitting GPU jobs without checking quota:** Vertex AI training GPU quotas (`custom_model_training_nvidia_*_gpus`) default to 0. Check first, request increase, validate with CPU smoke test, then submit after quota is approved.
 </examples>

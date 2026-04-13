@@ -19,6 +19,8 @@ This skill covers building production-ready GPU containers for ML training and p
 **References:** `references/cuda-compatibility-matrix.md`, `references/cheatsheet.md`
 **Templates:** `scripts/Dockerfile.template.uv` (recommended), `scripts/Dockerfile.template.pip`, `scripts/Dockerfile.template.vertex`
 
+**Approach:** Write the full command with actual variable names. Let the user run it, read the output together. Docker build errors show exactly which layer failed — read the error, fix the Dockerfile, rebuild.
+
 **Prerequisite:** `cloud-infrastructure-setup` skill (Artifact Registry repository must exist).
 </container-engineering>
 
@@ -74,8 +76,8 @@ Check host before choosing a version:
 ```bash
 nvidia-smi                                        # "CUDA Version: X.Y" — container must be ≤ this
 nvidia-smi --query-gpu=compute_cap --format=csv   # GPU architecture
-./scripts/validate-cuda.sh 12.4                   # automated check
 ```
+Run these. Read the output — the CUDA version in the top-right of `nvidia-smi` is the maximum your container can use.
 
 **Vertex AI constraint:** Max CUDA 12.4. Use `nvidia/cuda:12.4.1-devel-ubuntu22.04` for builder, `nvidia/cuda:12.4.1-runtime-ubuntu22.04` for runtime.
 
@@ -108,6 +110,7 @@ The repository must already exist:
 gcloud artifacts repositories create ml-containers \
   --repository-format=docker --location=us-central1
 ```
+Run it. The output confirms the repo was created. If it already exists, you'll see an error — that's fine.
 </build-and-push>
 
 <local-testing>
@@ -140,7 +143,7 @@ gcloud builds submit --config scripts/cloudbuild.yaml \
 
 Cloud Build authenticates to Artifact Registry automatically. Uses `N1_HIGHCPU_32` machines with 100 GB disk. Layer caching via `:cache` tag is pre-configured.
 
-**Cost:** Cloud Build charges per build-minute on high-CPU machines. Use it for production pushes only; build locally for iteration.
+**Cost:** Cloud Build charges per build-minute on high-CPU machines. Use it for production pushes only; build locally during iteration.
 </cloud-build>
 
 <cost-and-storage>
@@ -229,6 +232,7 @@ gcloud ai custom-jobs create \
   --worker-pool-spec=machine-type=n1-standard-8,accelerator-type=NVIDIA_TESLA_T4,\
 accelerator-count=1,container-image-uri=us-central1-docker.pkg.dev/my-project/ml-containers/training-gpu:v1.0.0
 ```
+Read the output — it shows the job resource name. If you get `PERMISSION_DENIED`, verify the service account has `roles/aiplatform.user`.
 
 **Common mistake — GPU not detected locally:**
 ```bash

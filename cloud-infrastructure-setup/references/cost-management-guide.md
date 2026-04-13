@@ -44,18 +44,33 @@ Strategies and best practices for managing costs in GCP ML training workloads.
 
 ### Implementation
 
-#### With gcloud CLI
+#### With gcloud CLI (YAML config)
+
+Spot scheduling must be set via YAML config file, not CLI flags:
+
+```yaml
+# job-config.yaml
+workerPoolSpecs:
+  - machineSpec:
+      machineType: n1-standard-4
+      acceleratorType: NVIDIA_TESLA_T4
+      acceleratorCount: 1
+    replicaCount: 1
+    containerSpec:
+      imageUri: us-docker.pkg.dev/vertex-ai/training/tf-gpu.2-12:latest
+scheduling:
+  strategy: SPOT
+  timeout: 86400s
+```
 
 ```bash
 gcloud ai custom-jobs create \
   --region=us-central1 \
   --display-name=spot-training \
-  --worker-pool-spec=machine-type=n1-standard-4,accelerator-type=NVIDIA_TESLA_T4,accelerator-count=1,replica-count=1 \
-  --python-package-uris=gs://BUCKET/trainer-0.1.tar.gz \
-  --python-module=trainer.task \
-  --args=--epochs=10 \
-  --scheduling-strategy=SPOT
+  --config=job-config.yaml
 ```
+
+> **Note:** The `--scheduling-strategy` CLI flag does not exist in current gcloud versions. Always use YAML config or the Python SDK for Spot scheduling.
 
 #### With Vertex AI SDK
 
@@ -71,16 +86,14 @@ job = aiplatform.CustomJob(
             "accelerator_count": 1,
         },
         "replica_count": 1,
-        "python_package_spec": {
-            "executor_image_uri": "us-docker.pkg.dev/vertex-ai/training/tf-gpu.2-12:latest",
-            "package_uris": ["gs://BUCKET/trainer-0.1.tar.gz"],
-            "python_module": "trainer.task",
+        "container_spec": {
+            "image_uri": "us-docker.pkg.dev/vertex-ai/training/tf-gpu.2-12:latest",
         },
     }],
+    scheduling={"strategy": "SPOT", "max_wait_duration": "3600s"},
 )
 
-# Run with SPOT scheduling
-job.run(scheduling_strategy="SPOT")
+job.run(sync=False)
 ```
 
 #### With REST API

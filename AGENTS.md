@@ -15,6 +15,7 @@ I am a personal assistant dedicated to writing and maintaining these skills. My 
 | `google-cloud-compute-ml` | Deploy and run ML models on GCP compute: GPU VMs, SSH, file transfer, Unsloth setup | `cloud-infrastructure-setup` |
 | `container-engineering` | Build optimized, reproducible GPU containers for ML training | `cloud-infrastructure-setup` |
 | `cloud-storage-artifacts` | Manage ML artifacts on GCS: buckets, uploads, downloads, lifecycle, cleanup | `cloud-infrastructure-setup` |
+| `ml-training-pipeline` | Fine-tune LLMs with TRL/PEFT/PyTorch: data prep, model loading, LoRA/QLoRA, SFTTrainer, OOM debugging | None |
 
 ## Repository Structure
 
@@ -51,7 +52,7 @@ fine-tuning-skills/
         ├── build-and-push.sh    
         ├── test-container-locally.sh
         └── validate-cuda.sh
-└── cloud-infrastructure-setup/  # Skill: GCP infrastructure setup (merged with google-cloud-account)
+└── cloud-infrastructure-setup/  # Skill: GCP infrastructure setup
     ├── SKILL.md
     ├── scripts/
     │   ├── gcp_auth.sh          # Auth, ADC, service accounts, config profiles
@@ -59,11 +60,8 @@ fine-tuning-skills/
     │   ├── gcp_iam.sh           # IAM roles, policy, custom roles, audit
     │   ├── gcp_diagnose.sh      # Account health diagnostics
     │   ├── setup-gcloud.sh      # One-shot gcloud install and setup
-    │   ├── enable-apis.sh       # Enable APIs by group
     │   ├── check-permissions.sh # Verify permissions
-    │   ├── set-env.sh           # Env var template
-    │   ├── switch-config.sh     # Config switching
-    │   └── create-budget-alert.sh
+    │   └── set-env.sh           # Env var template
     └── references/
         ├── gcloud-cheat-sheet.md
         ├── iam-roles-reference.md
@@ -76,7 +74,6 @@ fine-tuning-skills/
     │   ├── submit-training-job.py
     │   ├── monitor-job.sh
     │   ├── handle-preemption.sh
-    │   ├── cancel-job.sh
     │   ├── cost-estimate.py
     │   └── example-job-config.yaml
     └── references/
@@ -87,14 +84,24 @@ fine-tuning-skills/
     ├── SKILL.md
     ├── scripts/
     │   ├── setup-bucket.sh
-    │   ├── upload-training-artifacts.sh
-    │   ├── download-model.sh
-    │   ├── cleanup-old-runs.sh
-    │   └── sync-directory.sh
+    │   └── cleanup-old-runs.sh
     └── references/
         ├── cli-cheat-sheet.md
         ├── storage-classes.md
         └── documentation-links.md
+└── ml-training-pipeline/         # Skill: LLM fine-tuning pipeline
+    ├── SKILL.md
+    ├── scripts/
+    │   ├── train.py              # Main training script (LoRA/QLoRA)
+    │   ├── prepare-dataset.py    # Dataset preprocessing
+    │   ├── validate-model.py     # Inference validation
+    │   └── config.yaml           # Config template
+    └── references/
+        ├── chat-templates.md
+        ├── peft-patterns.md
+        ├── oom-debugging.md
+        ├── memory-optimization.md
+        └── official-docs.md
 ```
 
 ## Skill Conventions
@@ -127,3 +134,4 @@ fine-tuning-skills/
 | Create and implement MCP tools for CDN management | `/home/avreymi/code/dotfiles/skills/manage-mcp` |
 | Update, create, fix or improve Agent Skills (SKILL.md files) | `/home/avreymi/code/dotfiles/skills/manage-skills` |
 | Guides creation of clear, operational scripts in Python and JavaScript for AWS/CDN work | `/home/avreymi/code/dotfiles/skills/scripts` |
+I'ts very very importent to use the skills!!
