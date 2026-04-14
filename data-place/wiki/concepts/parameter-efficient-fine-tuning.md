@@ -41,12 +41,25 @@ Parameter-Efficient Fine-Tuning (PEFT) refers to methods that adapt large pre-tr
 - **Storage per Task**: Small adapters vs full model
 - **Catastrophic Forgetting**: Minimal vs significant
 
+## Extreme PEFT: TinyLoRA
+
+[[2026-tinylora-extreme-parameter-efficiency|TinyLoRA]] pushes PEFT to its limit — achieving 91.8% GSM8K with only 13 trainable parameters on Qwen2.5-7B. Uses weight tying + random projections, and finds RL (GRPO) is 100-1000x more efficient than SFT at low parameter counts.
+
+## PEFT for Few-Shot Adaptation
+
+[[2025-optimization-inspired-few-shot-adaptation|OFA]] takes a different approach: uses LayerNorm as learnable preconditioners without adding parameters, avoiding PEFT's overfitting risk on few-shot data.
+
 ## Sources
 
 - [[sources/few-shot-parameter-efficient-fine-tuning-is-better|Few-Shot Parameter-Efficient Fine-Tuning is Better]]
 - [[sources/few-shot-fine-tuning-techniques-overview|Few-Shot Fine-Tuning Techniques Overview]]
+- [[sources/2024-finetuning-llms-limited-data-survey|Fine-tuning LLMs with Limited Data: Survey]]
+- [[sources/2026-tinylora-extreme-parameter-efficiency|TinyLoRA]]
+- [[sources/2025-optimization-inspired-few-shot-adaptation|OFA]]
 
 ## See Also
 
 - [[concepts/lora|LoRA]]
 - [[concepts/qlora|QLoRA]]
+- [[concepts/catastrophic-forgetting-mitigation|Catastrophic Forgetting Mitigation]]
+- [[concepts/rl-based-finetuning|RL-Based Fine-Tuning]]

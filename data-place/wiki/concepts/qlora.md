@@ -39,11 +39,22 @@ QLoRA combines 4-bit quantization with LoRA to enable fine-tuning of very large 
 - Minimal quality degradation compared to 16-bit LoRA
 - Massive memory savings enable larger models
 
+## Practical Guidance
+
+From [[2026-efficient-strategy-finetuning-frontiers|Frontiers 2026]]: DSS + QLoRA enables training under tightest GPU memory budgets while maintaining competitive performance. Alpha-to-rank ratio of **4:1** recommended.
+
+## Composability with MFT
+
+[[2025-minifinetuning-corrective-self-distillation|MiniFineTuning]] is composable with QLoRA for combined benefits: MFT reduces degeneralization, QLoRA reduces memory requirements.
+
 ## Sources
 
 - [[sources/few-shot-parameter-efficient-fine-tuning-is-better|Few-Shot Parameter-Efficient Fine-Tuning is Better]]
+- [[sources/2026-efficient-strategy-finetuning-frontiers|DSS + LoRA/QLoRA Strategy]]
+- [[sources/2025-minifinetuning-corrective-self-distillation|MiniFineTuning]]
 
 ## See Also
 
 - [[concepts/lora|LoRA]]
 - [[concepts/parameter-efficient-fine-tuning|PEFT]]
+- [[concepts/catastrophic-forgetting-mitigation|Catastrophic Forgetting Mitigation]]

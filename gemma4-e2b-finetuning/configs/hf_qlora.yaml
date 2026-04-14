@@ -1,0 +1,42 @@
+# Standard HF TRL + PEFT + QLoRA config for Gemma 4 E2B
+# Fallback when Unsloth is unavailable
+
+model_name: "google/gemma-4-2b-it"
+max_seq_length: 2048
+
+# 4-bit quantization
+load_in_4bit: true
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_use_double_quant: true
+
+# LoRA hyperparameters
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training hyperparameters
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 4
+warmup_steps: 10
+max_steps: 60
+num_train_epochs: null
+learning_rate: 2.0e-4
+weight_decay: 0.01
+lr_scheduler_type: "linear"
+save_strategy: "steps"
+save_steps: 100
+save_total_limit: 3
+logging_steps: 1
+optim: "paged_adamw_8bit"
+seed: 3407
+report_to: "none"
+group_by_length: true

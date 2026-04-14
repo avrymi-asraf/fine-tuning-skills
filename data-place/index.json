@@ -18,5 +18,85 @@
     "size_bytes": 544245,
     "format": "PDF",
     "topics": ["few-shot learning", "PEFT", "LoRA", "parameter-efficient fine-tuning"]
+  },
+  {
+    "id": "2024-finetuning-llms-limited-data-survey",
+    "title": "Fine-tuning LLMs with Limited Data: A Survey and Practical Guide",
+    "filename": "2024-finetuning-llms-limited-data-survey.md",
+    "added_date": "2026-04-13",
+    "source": "arXiv (2411.09539)",
+    "size_bytes": 3067,
+    "format": "Markdown",
+    "topics": ["few-shot learning", "PEFT", "domain adaptation", "preference alignment", "low-resource", "survey"]
+  },
+  {
+    "id": "2025-few-shot-fine-tuning-10-examples",
+    "title": "Few-Shot Fine-Tuning: Train a Model with 10 Examples",
+    "filename": "2025-few-shot-fine-tuning-10-examples.md",
+    "added_date": "2026-04-13",
+    "source": "distil labs",
+    "size_bytes": 2909,
+    "format": "Markdown",
+    "topics": ["few-shot fine-tuning", "synthetic data", "SLM", "LoRA", "in-context learning", "production deployment"]
+  },
+  {
+    "id": "2026-tinylora-extreme-parameter-efficiency",
+    "title": "TinyLoRA: 13-Parameter Fine-Tuning Reaching 91.8% GSM8K",
+    "filename": "2026-tinylora-extreme-parameter-efficiency.md",
+    "added_date": "2026-04-13",
+    "source": "arXiv (2602.04118) / FAIR Meta, Cornell, CMU",
+    "size_bytes": 3438,
+    "format": "Markdown",
+    "topics": ["LoRA", "extreme parameter efficiency", "RL fine-tuning", "GRPO", "weight tying", "math reasoning"]
+  },
+  {
+    "id": "2025-data-whisperer-efficient-data-selection",
+    "title": "Data Whisperer: Efficient Data Selection for Task-Specific LLM Fine-Tuning",
+    "filename": "2025-data-whisperer-efficient-data-selection.md",
+    "added_date": "2026-04-13",
+    "source": "ACL 2025 (2505.12212)",
+    "size_bytes": 2631,
+    "format": "Markdown",
+    "topics": ["data selection", "in-context learning", "attention-based", "efficient fine-tuning", "training-free"]
+  },
+  {
+    "id": "2025-optimization-inspired-few-shot-adaptation",
+    "title": "Optimization-Inspired Few-Shot Adaptation (OFA)",
+    "filename": "2025-optimization-inspired-few-shot-adaptation.md",
+    "added_date": "2026-04-13",
+    "source": "arXiv (2505.19107) / Oxford, KAUST",
+    "size_bytes": 2231,
+    "format": "Markdown",
+    "topics": ["few-shot adaptation", "LayerNorm preconditioning", "overfitting avoidance", "ICL", "PEFT"]
+  },
+  {
+    "id": "2025-minifinetuning-corrective-self-distillation",
+    "title": "MiniFineTuning: Low-Data Domain Adaptation via Corrective Self-Distillation",
+    "filename": "2025-minifinetuning-corrective-self-distillation.md",
+    "added_date": "2026-04-13",
+    "source": "NVIDIA Research (arXiv:2506.15702)",
+    "size_bytes": 3266,
+    "format": "Markdown",
+    "topics": ["domain adaptation", "self-distillation", "catastrophic forgetting", "low-data", "NVIDIA NIMs"]
+  },
+  {
+    "id": "2025-finetuned-in-context-learners",
+    "title": "Fine-Tuned In-Context Learners for Efficient Adaptation",
+    "filename": "2025-finetuned-in-context-learners.md",
+    "added_date": "2026-04-13",
+    "source": "arXiv (2512.19879) / Google DeepMind, Microsoft AI",
+    "size_bytes": 2393,
+    "format": "Markdown",
+    "topics": ["in-context learning", "fine-tuning", "prequential evaluation", "unified adaptation", "sample efficiency"]
+  },
+  {
+    "id": "2026-efficient-strategy-finetuning-frontiers",
+    "title": "An Efficient Strategy for Fine-Tuning LLMs (DSS + LoRA/QLoRA)",
+    "filename": "2026-efficient-strategy-finetuning-frontiers.md",
+    "added_date": "2026-04-13",
+    "source": "Frontiers in AI (10.3389/frai.2026.1665992)",
+    "size_bytes": 2562,
+    "format": "Markdown",
+    "topics": ["distilling step-by-step", "DSS", "LoRA", "QLoRA", "rationale supervision", "resource-constrained"]
   }
 ]
