@@ -4,16 +4,13 @@
 # BEFORE SUBMITTING:
 #   1. Replace PROJECT_ID with your GCP project ID
 #   2. Replace BUCKET_NAME with your GCS bucket name
-#   3. Set HF_TOKEN via Secret Manager or export HF_TOKEN=... before submitting
-#
-# Example:
-#   sed -i 's/PROJECT_ID/my-gcp-project/g; s/BUCKET_NAME/my-gcp-project-gemma4-ft/g' configs/vertex_job.yaml
-#   export HF_TOKEN=$(gcloud secrets versions access latest --secret=hf-token)
-#   uv run ./cloud-job-orchestration/scripts/submit-training-job.py --config configs/vertex_job.yaml --use-spot
+#   3. Ensure the container image is pushed to Artifact Registry
+#   4. Confirm GPU quota > 0 in the target region
+#   5. Set HF_TOKEN via Secret Manager or env var injection
 
 workerPoolSpecs:
   - machineSpec:
-      machineType: g2-standard-8
+      machineType: g2-standard-8        # 1x L4 GPU, 32GB VRAM
       acceleratorType: NVIDIA_L4
       acceleratorCount: 1
     replicaCount: 1
@@ -21,16 +18,21 @@ workerPoolSpecs:
       imageUri: us-central1-docker.pkg.dev/PROJECT_ID/ml-containers/gemma4-train:v1.0.0
       command:
         - python
-        - train_unsloth.py
+        - train.py
       args:
-        - --config=configs/unsloth_lora.yaml
-        - --dataset_path=/gcs/datasets/gemma4-e2b-v1
-        - --output_dir=/gcs/output
+        - --config=configs/hf_qlora.yaml
+        - --dataset_path=/tmp/dataset
+        - --output_dir=/tmp/output
       env:
         - name: GCS_BUCKET
           value: gs://BUCKET_NAME
-        # HF_TOKEN: inject via Secret Manager in production.
-        # For local testing: set in your shell before submitting the job.
-        # Never commit real tokens to version control.
+        # HF_TOKEN: inject via Secret Manager in production
+        # See: gcloud secrets create hf_token --data-file=-
+        # Then reference in job: valueFrom: secretKeyRef...
         - name: HF_TOKEN
           value: ""
+    # Optional: use n1-standard-8 + NVIDIA_TESLA_T4 as a cheaper alternative
+    # machineSpec:
+    #   machineType: n1-standard-8
+    #   acceleratorType: NVIDIA_TESLA_T4
+    #   acceleratorCount: 1

@@ -54,21 +54,45 @@ def adapt_alpaca(example):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare dataset for Gemma 4 E2B fine-tuning")
-    parser.add_argument("--dataset_name", type=str, default="yahma/alpaca-cleaned",
-                        help="HuggingFace dataset name")
-    parser.add_argument("--dataset_config", type=str, default=None,
-                        help="Dataset config name")
-    parser.add_argument("--split", type=str, default="train",
-                        help="Dataset split to use")
-    parser.add_argument("--tokenizer_name", type=str, default="google/gemma-4-2b-it",
-                        help="Tokenizer to use for chat templating")
-    parser.add_argument("--max_samples", type=int, default=None,
-                        help="Limit dataset size for quick experiments")
-    parser.add_argument("--max_seq_length", type=int, default=2048,
-                        help="Filter out examples exceeding this token count")
-    parser.add_argument("--output_path", type=str, default="data/formatted_dataset",
-                        help="Where to save the formatted dataset")
+    parser = argparse.ArgumentParser(
+        description="Prepare dataset for Gemma 4 E2B fine-tuning"
+    )
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default="yahma/alpaca-cleaned",
+        help="HuggingFace dataset name",
+    )
+    parser.add_argument(
+        "--dataset_config", type=str, default=None, help="Dataset config name"
+    )
+    parser.add_argument(
+        "--split", type=str, default="train", help="Dataset split to use"
+    )
+    parser.add_argument(
+        "--tokenizer_name",
+        type=str,
+        default="google/gemma-4-E2B-it",
+        help="Tokenizer to use for chat templating",
+    )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Limit dataset size for quick experiments",
+    )
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=2048,
+        help="Filter out examples exceeding this token count",
+    )
+    parser.add_argument(
+        "--output_path",
+        type=str,
+        default="data/formatted_dataset",
+        help="Where to save the formatted dataset",
+    )
     args = parser.parse_args()
 
     print(f"Loading tokenizer: {args.tokenizer_name}")
@@ -76,8 +100,10 @@ def main():
 
     # Validate chat template exists
     if tokenizer.chat_template is None:
-        print(f"[WARN] Tokenizer {args.tokenizer_name} has no chat_template. "
-              "You may need to specify one manually in the training script.")
+        print(
+            f"[WARN] Tokenizer {args.tokenizer_name} has no chat_template. "
+            "You may need to specify one manually in the training script."
+        )
 
     print(f"Loading dataset: {args.dataset_name} (split={args.split})")
     ds = load_dataset(args.dataset_name, args.dataset_config, split=args.split)
@@ -87,7 +113,9 @@ def main():
 
     # Adapt format if needed
     if "messages" not in ds.column_names and "conversations" not in ds.column_names:
-        print("Dataset lacks 'messages'/'conversations' — adapting from instruction/input/output fields.")
+        print(
+            "Dataset lacks 'messages'/'conversations' — adapting from instruction/input/output fields."
+        )
         ds = ds.map(adapt_alpaca, remove_columns=ds.column_names)
 
     print("Applying chat template...")
@@ -102,8 +130,10 @@ def main():
     after = len(ds)
     removed = before - after
     if removed > 0:
-        print(f"Filtered out {removed} examples exceeding max_seq_length={args.max_seq_length} "
-              f"({before} → {after})")
+        print(
+            f"Filtered out {removed} examples exceeding max_seq_length={args.max_seq_length} "
+            f"({before} → {after})"
+        )
 
     # Drop the helper column before saving
     ds = ds.remove_columns(["token_count"])

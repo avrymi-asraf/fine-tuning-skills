@@ -221,7 +221,7 @@ gcloud ai custom-jobs cancel $(cat .last_job_id) --region=us-central1
 Use **Spot VMs** for 60–91% cost savings. The training script **must** checkpoint regularly:
 
 ```python
-# Inside train_unsloth.py / train_hf_peft.py
+# Inside train_hf_peft.py
 training_args = TrainingArguments(
     output_dir=os.environ.get("AIP_MODEL_DIR", "/output"),
     save_strategy="steps",
@@ -244,17 +244,17 @@ If preempted, use the retry handler:
 For rapid iteration without cloud costs, run locally using the same scripts:
 
 ```bash
-# Local training (Unsloth)
-python train_unsloth.py --dataset_path data/formatted_dataset
+# Local training (HF PEFT + QLoRA)
+uv run python train_hf_peft.py --dataset_path data/formatted_dataset
 
 # Local inference
-python inference.py --model_path outputs/unsloth-gemma4-e2b/lora_adapter
+uv run python inference.py --model_path outputs/hf-gemma4-e2b/lora_adapter
 ```
 
 Local requirements:
 - GPU with 8GB+ VRAM (L4, T4, RTX 3060/4060)
 - CUDA 12.4 compatible driver
-- Same Python dependencies as the container
+- uv installed (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 
 ---
 
@@ -292,16 +292,16 @@ python export.py \
 ```
 gemma4-e2b-finetuning/
 ├── PLAN.md                       # This document
+├── pyproject.toml                # uv project configuration
+├── uv.lock                       # Locked dependencies
 ├── Dockerfile                    # Multi-stage GPU container
-├── requirements.txt              # Python dependencies
+├── requirements.txt              # (legacy, see pyproject.toml)
 ├── configs/
-│   ├── unsloth_lora.yaml         # Unsloth hyperparameters
 │   ├── hf_qlora.yaml             # HF PEFT hyperparameters
 │   └── vertex_job.yaml           # Vertex AI job config
 ├── data/
 │   └── prepare_dataset.py        # Load + format + upload dataset
-├── train_unsloth.py              # Primary training script
-├── train_hf_peft.py              # Fallback training script
+├── train_hf_peft.py              # Primary training script (HF PEFT)
 ├── inference.py                  # Quick local inference
 └── export.py                     # Merge adapters / export GGUF
 ```
@@ -310,17 +310,17 @@ gemma4-e2b-finetuning/
 
 ## 10. Hyperparameter Cheatsheet
 
-| Param | Unsloth | HF PEFT | Notes |
-|-------|---------|---------|-------|
-| rank (r) | 16 | 16 | Start here; 8 for tiny VRAM, 32 for complex tasks |
-| lora_alpha | 16 | 32 | Unsloth: 1:1 ratio. HF: 2:1 ratio |
-| lora_dropout | 0 | 0.05 | Unsloth recommends 0 for speed |
-| max_seq_length | 2048 | 2048 | E2B handles 8K; 2048 is safe |
-| batch_size | 2 | 2 | Reduce to 1 if OOM |
-| grad_accum | 4 | 4 | Effective batch = 8 |
-| lr | 2e-4 | 2e-4 | Standard for LoRA on small models |
-| warmup_steps | 5 | 10 | Short for small datasets |
-| max_steps | 60–500 | 60–500 | Scale with dataset size |
+| Param | HF PEFT | Notes |
+|-------|---------|-------|
+| rank (r) | 16 | Start here; 8 for tiny VRAM, 32 for complex tasks |
+| lora_alpha | 32 | Standard 2:1 ratio |
+| lora_dropout | 0.05 | Regularization |
+| max_seq_length | 2048 | E2B handles 8K; 2048 is safe |
+| batch_size | 2 | Reduce to 1 if OOM |
+| grad_accum | 4 | Effective batch = 8 |
+| lr | 2e-4 | Standard for LoRA on small models |
+| warmup_steps | 10 | Short for small datasets |
+| max_steps | 60–500 | Scale with dataset size |
 
 ---
 

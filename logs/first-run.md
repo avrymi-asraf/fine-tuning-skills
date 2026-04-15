@@ -136,3 +136,8 @@ To push images from your local machine (`avreymi-pc`) to the new repository you 
 2.  **Install Docker:** Before you can actually build or push any Vertex AI container images, you need to install Docker Engine or Docker Desktop on your Linux machine (`avreymi-pc`). 
     * If you are on Ubuntu/Debian, you typically resolve this by running: `sudo apt-get update` and `sudo apt-get install docker.io`.
 3.  **Verify:** Once installed, run `docker --version` to ensure your system recognizes the command.
+
+
+
+- first validate what are insall!
+- make it more step by step, and explain every stage!

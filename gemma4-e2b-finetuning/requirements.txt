@@ -1,19 +1,5 @@
-# Core training stack
-# NOTE: torch is installed separately in Dockerfile via --index-url for CUDA 12.4
-# torch>=2.5.1
-unsloth[cu124-ampere]>=2025.4.0
-trl>=0.16.0
-peft>=0.15.0
-transformers>=4.50.0
-datasets>=3.0.0
-accelerate>=1.5.0
-bitsandbytes>=0.46.0
-
-# Config / utility
-pyyaml>=6.0
-huggingface-hub>=0.29.0
-
-# Cloud (GCS download/upload in Vertex AI)
-google-cloud-storage>=2.19.0
-
-# GGUF export is handled by Unsloth's save_pretrained_gguf (no llama-cpp-python needed)
+# NOTE: This project uses uv + pyproject.toml for dependency management.
+# Install with: uv sync
+# Run with: uv run python train_hf_peft.py ...
+#
+# For Docker builds, dependencies are installed via pyproject.toml in the Dockerfile.

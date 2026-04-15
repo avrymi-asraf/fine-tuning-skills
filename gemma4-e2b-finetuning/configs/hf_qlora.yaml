@@ -1,7 +1,7 @@
 # Standard HF TRL + PEFT + QLoRA config for Gemma 4 E2B
 # Fallback when Unsloth is unavailable
 
-model_name: "google/gemma-4-2b-it"
+model_name: "google/gemma-4-E2B-it"
 max_seq_length: 2048
 
 # 4-bit quantization

@@ -40,16 +40,13 @@ RUN uv pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu124
 
 # --- Training stack (stable deps first for layer caching) ---
-COPY requirements.txt /tmp/requirements.txt
+COPY pyproject.toml /tmp/pyproject.toml
 RUN uv pip install --no-cache-dir \
     --python /opt/venv/bin/python \
-    -r /tmp/requirements.txt
-
-# --- Cloud integrations ---
-RUN uv pip install --no-cache-dir \
-    --python /opt/venv/bin/python \
-    google-cloud-storage \
-    google-cloud-logging
+    trl peft transformers datasets accelerate bitsandbytes \
+    pyyaml huggingface-hub google-cloud-storage \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    --extra-index-url https://pypi.org/simple
 
 # ---------------------------------------------------------------------------
 # STAGE 2: Runtime — minimal image, no compilers
@@ -81,8 +78,7 @@ WORKDIR /workspace
 # Copy training code LAST to maximize layer caching
 COPY --chown=trainer:trainer configs/ /workspace/configs/
 COPY --chown=trainer:trainer data/ /workspace/data/
-COPY --chown=trainer:trainer train_unsloth.py /workspace/
-COPY --chown=trainer:trainer train_hf_peft.py /workspace/
+COPY --chown=trainer:trainer train_hf_peft.py /workspace/train.py
 COPY --chown=trainer:trainer inference.py /workspace/
 COPY --chown=trainer:trainer export.py /workspace/
 
@@ -90,5 +86,5 @@ USER trainer
 
 # Vertex AI sets AIP_MODEL_DIR, AIP_CHECKPOINT_DIR, AIP_TENSORBOARD_LOG_DIR
 # at runtime. The training script reads these for output paths.
-ENTRYPOINT ["python", "train_unsloth.py"]
-CMD ["--config=configs/unsloth_lora.yaml", "--dataset_path=data/formatted_dataset"]
+ENTRYPOINT ["python", "train.py"]
+CMD ["--config=configs/hf_qlora.yaml", "--dataset_path=data/formatted_dataset"]
