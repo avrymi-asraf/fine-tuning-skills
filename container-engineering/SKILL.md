@@ -48,14 +48,18 @@ RUN uv pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu124
 ```
 
-Runtime stage — copy venv and add non-root user:
+Runtime stage — copy venv **and Python installation**, add non-root user:
 ```dockerfile
 COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
+COPY --from=builder /opt/python /opt/python
+ENV PATH="/opt/venv/bin:/opt/python/cpython-3.11.11-linux-x86_64-gnu/bin:$PATH" \
+    PYTHONUNBUFFERED=1
 RUN groupadd -r trainer && useradd -r -g trainer trainer
 COPY --chown=trainer:trainer . /workspace
 USER trainer
 ```
+
+**Critical:** `uv` installs Python to `UV_PYTHON_INSTALL_DIR` (default `/opt/python`), outside the venv. The runtime stage must copy both `/opt/venv` **and** `/opt/python`, and `PATH` must include the Python binary directory. Missing this causes `python: not found` in the runtime container.
 
 **Layer order** (stable → volatile): apt deps → PyTorch → `COPY requirements.txt` + install → `COPY src/` last.
 
@@ -174,6 +178,7 @@ ML images are large (5–15 GB uncompressed). Artifact Registry storage costs ~$
 - **Wrong CUDA architecture** — `no kernel image` error. Check compute capability with `nvidia-smi --query-gpu=compute_cap`.
 - **Missing NVIDIA runtime** — `could not select device driver`. Install `nvidia-container-toolkit` and restart Docker.
 - **Forgetting `--gpus all`** — PyTorch reports `cuda.is_available() == False` without it.
+- **uv: "python not found" in runtime** — `uv` installs Python to `/opt/python`, not inside the venv. Must `COPY --from=builder /opt/python /opt/python` and add Python bin dir to `PATH` in runtime stage.
 </anti-patterns>
 
 <container-engineering-scripts>

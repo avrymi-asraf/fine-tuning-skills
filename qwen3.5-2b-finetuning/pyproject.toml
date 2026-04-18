@@ -1,0 +1,26 @@
+[project]
+name = "qwen3.5-2b-finetuning"
+version = "1.0.0"
+description = "Qwen 3.5 2B fine-tuning with HF TRL + PEFT (QLoRA) — local-first, cloud optional"
+readme = "PLAN.md"
+requires-python = ">=3.11"
+dependencies = [
+    # PyTorch CUDA 12.4 — pinned for cu124 index
+    "torch==2.6.0",
+    # Core training stack — pinned for compatibility
+    "trl>=0.15.0,<0.20.0",
+    "peft>=0.14.0,<0.16.0",
+    "transformers[serving] @ git+https://github.com/huggingface/transformers.git@main",
+    "datasets>=3.0.0,<4.0.0",
+    "accelerate>=1.4.0,<1.6.0",
+    "bitsandbytes>=0.45.0,<0.47.0",
+    # Config / utility
+    "pyyaml>=6.0",
+    "huggingface-hub>=0.29.0",
+    # Cloud (GCS download/upload — optional, for Vertex AI)
+    "google-cloud-storage>=2.19.0",
+]
+
+[tool.uv]
+extra-index-url = ["https://download.pytorch.org/whl/cu124"]
+index-strategy = "unsafe-best-match"

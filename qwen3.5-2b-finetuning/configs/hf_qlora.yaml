@@ -1,0 +1,45 @@
+# Standard HF TRL + PEFT + QLoRA config for Qwen 3.5 2B
+# Local-first fine-tuning with optional cloud deployment
+
+model_name: "Qwen/Qwen3.5-2B"
+max_seq_length: 4096
+
+# 4-bit quantization
+# NOTE: bitsandbytes requires python3-dev system package to compile Triton kernels.
+# If python3-dev is not available, set load_in_4bit: false and use full bf16 training.
+# Qwen 3.5 2B (~1.9B params in bf16) fits in ~4GB VRAM, so full bf16 + LoRA is feasible.
+load_in_4bit: false
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_use_double_quant: true
+
+# LoRA hyperparameters
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training hyperparameters
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 4
+warmup_steps: 10
+max_steps: 60
+num_train_epochs: 1
+learning_rate: 2.0e-4
+weight_decay: 0.01
+lr_scheduler_type: "linear"
+save_strategy: "steps"
+save_steps: 100
+save_total_limit: 3
+logging_steps: 1
+optim: "adamw_torch"
+seed: 3407
+report_to: "none"
+group_by_length: true

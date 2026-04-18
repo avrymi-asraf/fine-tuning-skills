@@ -2,13 +2,13 @@
 
 ## Short-Term Activity Log
 
+**2026-04-18** — Built and validated Gemma 4 training container locally. Fixed critical Dockerfile bug: uv installs Python to `/opt/python` which must be copied to runtime stage (was missing, causing "python not found"). Pushed updated image to Artifact Registry. Created Vertex AI job config. Local training test confirmed RTX 4060 (8GB) cannot fit Gemma 4 even in 4-bit — needs cloud GPU.
+
 **2026-04-18** — Answered user's question about most accessible GPUs on GCP. Summarized L4/T4/A100/H100 accessibility, costs, and quota paths. Memory file restructured per agent-and-skill-improvement skill.
 
 **2026-04-16** — Ingested web research into `data-place/wiki/`: Gemma 4 model family (source + entity pages) and competitor landscape (Phi-4, Qwen3, Llama 4, Mistral, DeepSeek).
 
 **2026-04-15** — Fixed `gemma4-e2b-finetuning/configs/vertex_job.yaml`: removed empty `HF_TOKEN` env var that caused Vertex AI validation error. Changes remain unstaged.
-
-**2026-04-15** — User asked for status update. Confirmed pipeline blocked on Vertex AI L4 quota. Memory updated with current state.
 
 ## Long-Term Knowledge Base
 
@@ -25,12 +25,24 @@
 - Task automation via `tasks.py` (Invoke)
 - Configs: `configs/hf_qlora.yaml` (training), `configs/vertex_job.yaml` (Vertex AI — empty HF_TOKEN removed)
 
-**Stack:** `torch==2.6.0`, `trl`, `peft`, `transformers` (git), `datasets`, `accelerate`, `bitsandbytes`. Package manager: `uv`.
+**Stack:** `torch==2.5.1`, `trl`, `peft`, `transformers`, `datasets`, `accelerate`, `bitsandbytes`. Package manager: `uv`.
+
+**Critical Fix Applied:**
+- Dockerfile was missing `COPY --from=builder /opt/python /opt/python` — uv installs Python outside the venv. Without this, runtime stage has no `python` binary. Also need `PATH` to include `/opt/python/cpython-X.Y.Z-linux-x86_64-gnu/bin`.
+
+**Local GPU Limitation:**
+- RTX 4060 Laptop (8GB VRAM) cannot train Gemma 4 even with QLoRA. Model loading fails with "Some modules dispatched on CPU/disk". Cloud GPU required.
 
 **Paths to Unblock:**
-1. Request Vertex AI L4 quota (2–3 days)
-2. Try T4 on Vertex AI (check `custom_model_training_nvidia_t4_gpus` first)
-3. Run on Compute Engine VM directly (L4 quota available now)
+1. Submit Vertex AI job with H100 (config ready at `gemma4-e2b-vertex-job.yaml`)
+2. Upload dataset to GCS if not already there: `gs://gamma4-fine-tuning-datasets/formatted_dataset`
+3. Ensure HF_TOKEN is set via Secret Manager or env var for Vertex AI
+
+**Vertex AI Job Config:**
+- Machine: `a3-highgpu-1g` (1× H100 80GB)
+- Spot VMs: enabled (~$1.50/hr)
+- Image: `us-central1-docker.pkg.dev/gamma4-fine-tuning/ml-containers/gemma4-train:v1.0.0`
+- Config: `gemma4-e2b-vertex-job.yaml`
 
 **External Context:**
 - GCP project: `gamma4-fine-tuning`
@@ -53,4 +65,5 @@
 ### Stale / Known Issues
 
 - `gemma4-e2b-finetuning/state/status.md` references deleted Unsloth files — needs cleanup.
+- Dockerfile fix (COPY /opt/python) should be propagated to template files in `container-engineering/scripts/`.
 - Unstaged changes exist in `configs/vertex_job.yaml` and `data-place/wiki/` files.

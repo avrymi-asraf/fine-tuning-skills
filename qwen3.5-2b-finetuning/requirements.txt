@@ -1,0 +1,5 @@
+# NOTE: This project uses uv + pyproject.toml for dependency management.
+# Install with: uv sync
+# Run with: uv run python train_hf_peft.py ...
+#
+# For Docker builds, dependencies are installed via pyproject.toml in the Dockerfile.

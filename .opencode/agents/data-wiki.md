@@ -1,6 +1,6 @@
 ---
 description: Ingests new information and maintains the data-place knowledge wiki
-mode: primary
+mode: all
 temperature: 0.2
 permission:
   edit: allow

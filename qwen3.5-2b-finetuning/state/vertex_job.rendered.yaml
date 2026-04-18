@@ -1,0 +1,18 @@
+workerPoolSpecs:
+- machineSpec:
+    machineType: g2-standard-8
+    acceleratorType: NVIDIA_L4
+    acceleratorCount: 1
+  replicaCount: 1
+  containerSpec:
+    imageUri: us-central1-docker.pkg.dev/gamma4-fine-tuning/ml-containers/qwen3.5-train:v1.0.0
+    command:
+    - python
+    - train.py
+    args:
+    - --config=configs/hf_qlora.yaml
+    - --dataset_path=/tmp/dataset
+    - --output_dir=/tmp/output
+    env:
+    - name: GCS_BUCKET
+      value: gs://gamma4-fine-tuning-qwen3.5-2b

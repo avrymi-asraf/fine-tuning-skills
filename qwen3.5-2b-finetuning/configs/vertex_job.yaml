@@ -1,0 +1,37 @@
+# Vertex AI Custom Job Config for Qwen 3.5 2B Fine-Tuning
+# Optional cloud deployment — local training is the default path.
+# Used by cloud-job-orchestration/scripts/submit-training-job.py
+#
+# BEFORE SUBMITTING:
+#   1. Replace PROJECT_ID with your GCP project ID
+#   2. Replace BUCKET_NAME with your GCS bucket name
+#   3. Ensure the container image is pushed to Artifact Registry
+#   4. Confirm GPU quota > 0 in the target region
+#   5. Set HF_TOKEN via Secret Manager or env var injection
+
+workerPoolSpecs:
+  - machineSpec:
+      machineType: g2-standard-8        # 1x L4 GPU, 32GB VRAM
+      acceleratorType: NVIDIA_L4
+      acceleratorCount: 1
+    replicaCount: 1
+    containerSpec:
+      imageUri: us-central1-docker.pkg.dev/PROJECT_ID/ml-containers/qwen3.5-train:v1.0.0
+      command:
+        - python
+        - train.py
+      args:
+        - --config=configs/hf_qlora.yaml
+        - --dataset_path=/tmp/dataset
+        - --output_dir=/tmp/output
+      env:
+        - name: GCS_BUCKET
+          value: gs://BUCKET_NAME
+        # HF_TOKEN: inject via Secret Manager in production
+        # See: gcloud secrets create hf_token --data-file=-
+        # Then reference in job: valueFrom: secretKeyRef...
+    # Optional: use n1-standard-8 + NVIDIA_TESLA_T4 as a cheaper alternative
+    # machineSpec:
+    #   machineType: n1-standard-8
+    #   acceleratorType: NVIDIA_TESLA_T4
+    #   acceleratorCount: 1

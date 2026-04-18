@@ -1,6 +1,6 @@
 ---
 description: Executes tasks end-to-end — runs commands, edits files, manages infrastructure. The primary hands-on agent that does the work.
-mode: primary
+mode: all
 permission:
   edit: allow
   bash:
