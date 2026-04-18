@@ -16,6 +16,8 @@
 | [[sources/2025-minifinetuning-corrective-self-distillation|MiniFineTuning]] | arXiv:2506.15702 | Corrective self-distillation for low-data domain adaptation; 9x lower degeneralization |
 | [[sources/2025-finetuned-in-context-learners|Fine-Tuned In-Context Learners]] | arXiv:2512.19879 | Unifies ICL and fine-tuning; prequential evaluation for low-data hyperparameter selection |
 | [[sources/2026-efficient-strategy-finetuning-frontiers|DSS + LoRA/QLoRA Strategy]] | Frontiers in AI 2026 | End-to-end strategy using Distilling Step-by-Step with LoRA/QLoRA benchmarking |
+| [[sources/2026-gemma-4-family|Gemma 4 Family]] | Web Research (Google Blog, HF, arXiv) | Google's open multimodal model family: E2B, E4B, 26B A4B, 31B |
+| [[sources/2026-gemma-4-competitors|Gemma 4 Competitors]] | Web Research (HF, blogs, tech reports) | Competitive landscape: Phi-4, Qwen3, Llama 4, Mistral Small 3, DeepSeek-V3 |
 
 ## Concepts
 
@@ -31,7 +33,9 @@
 
 ## Entities
 
-_(none yet)_
+| Page | Description |
+|------|-------------|
+| [[entities/gemma-4|Gemma 4]] | Google's open multimodal model family (E2B, E4B, 26B A4B, 31B) — architecture, benchmarks, and deployment |
 
 ## Overviews & Syntheses
 

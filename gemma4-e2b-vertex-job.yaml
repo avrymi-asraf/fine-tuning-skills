@@ -1,0 +1,45 @@
+# Gemma 4 E2B QLoRA Vertex AI Job Configuration
+# Submit with: uv run cloud-job-orchestration/scripts/submit-training-job.py --config gemma4-e2b-vertex-job.yaml
+
+display_name: gemma4-e2b-qlora-finetune
+
+worker_pool_specs:
+  - machine_type: a3-highgpu-1g
+    accelerator_type: NVIDIA_H100_80GB
+    accelerator_count: 1
+    replica_count: 1
+    container_uri: us-central1-docker.pkg.dev/gamma4-fine-tuning/ml-containers/gemma4-train:v1.0.0
+    command:
+      - python
+      - train.py
+    args:
+      - --config
+      - configs/hf_qlora.yaml
+      - --dataset_path
+      - gs://gamma4-fine-tuning-datasets/formatted_dataset
+    env:
+      # HF_TOKEN should be set via Secret Manager in production.
+      # For local testing, export HF_TOKEN before submission.
+      HF_TOKEN: ""
+      # Optional: additional GCS upload target (script falls back to AIP_MODEL_DIR)
+      GCS_BUCKET: "gs://gamma4-fine-tuning-outputs"
+    boot_disk_type: pd-ssd
+    boot_disk_size_gb: 500
+
+# Output location — Vertex AI injects AIP_MODEL_DIR pointing here
+base_output_dir: gs://gamma4-fine-tuning-outputs/gemma4-e2b-qlora
+
+# Scheduling
+scheduling:
+  use_spot: true
+  max_wait_duration: 3600s
+  timeout: 14400s
+
+# Labels for cost tracking
+labels:
+  project: gemma4-e2b
+  team: ml-research
+  environment: development
+
+# Don't block CLI
+sync: false

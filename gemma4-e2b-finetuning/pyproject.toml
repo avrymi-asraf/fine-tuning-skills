@@ -1,0 +1,29 @@
+[project]
+name = "gemma4-e2b-finetuning"
+version = "1.0.0"
+description = "Gemma 4 E2B fine-tuning with HF TRL + PEFT (no Unsloth) on Vertex AI"
+readme = "PLAN.md"
+requires-python = ">=3.11"
+dependencies = [
+    # PyTorch CUDA 12.4 — pinned for cu124 index
+    "torch==2.6.0",
+    # Core training stack — pinned for compatibility
+    "trl>=0.15.0,<0.20.0",
+    "peft>=0.14.0,<0.16.0",
+    "transformers>=4.51.0,<5.0.0",
+    "datasets>=3.0.0,<4.0.0",
+    "accelerate>=1.4.0,<1.6.0",
+    "bitsandbytes>=0.45.0,<0.47.0",
+    # Config / utility
+    "pyyaml>=6.0",
+    "huggingface-hub>=0.29.0",
+    # Cloud (GCS download/upload in Vertex AI)
+    "google-cloud-storage>=2.19.0",
+]
+
+[tool.uv]
+extra-index-url = ["https://download.pytorch.org/whl/cu124"]
+index-strategy = "unsafe-best-match"
+
+[tool.uv.sources]
+transformers = { git = "https://github.com/huggingface/transformers.git" }

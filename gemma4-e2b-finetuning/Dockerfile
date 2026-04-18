@@ -60,8 +60,9 @@ RUN groupadd -r trainer -g 1000 && \
     chown -R trainer:trainer /workspace /gcs
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/python /opt/python
 
-ENV PATH="/opt/venv/bin:$PATH" \
+ENV PATH="/opt/venv/bin:/opt/python/cpython-3.11.11-linux-x86_64-gnu/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1

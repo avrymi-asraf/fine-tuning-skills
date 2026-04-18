@@ -29,8 +29,6 @@ workerPoolSpecs:
         # HF_TOKEN: inject via Secret Manager in production
         # See: gcloud secrets create hf_token --data-file=-
         # Then reference in job: valueFrom: secretKeyRef...
-        - name: HF_TOKEN
-          value: ""
     # Optional: use n1-standard-8 + NVIDIA_TESLA_T4 as a cheaper alternative
     # machineSpec:
     #   machineType: n1-standard-8

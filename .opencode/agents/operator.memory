@@ -1,0 +1,56 @@
+# Operator Memory — fine-tuning-skills
+
+## Short-Term Activity Log
+
+**2026-04-18** — Answered user's question about most accessible GPUs on GCP. Summarized L4/T4/A100/H100 accessibility, costs, and quota paths. Memory file restructured per agent-and-skill-improvement skill.
+
+**2026-04-16** — Ingested web research into `data-place/wiki/`: Gemma 4 model family (source + entity pages) and competitor landscape (Phi-4, Qwen3, Llama 4, Mistral, DeepSeek).
+
+**2026-04-15** — Fixed `gemma4-e2b-finetuning/configs/vertex_job.yaml`: removed empty `HF_TOKEN` env var that caused Vertex AI validation error. Changes remain unstaged.
+
+**2026-04-15** — User asked for status update. Confirmed pipeline blocked on Vertex AI L4 quota. Memory updated with current state.
+
+## Long-Term Knowledge Base
+
+### Project: gemma4-e2b-finetuning
+
+**Goal:** Fine-tune `google/gemma-4-E2B-it` with QLoRA on Vertex AI.
+
+**Current Phase:** Blocked. Vertex AI `custom_model_training_nvidia_l4_gpus` quota = 0. Compute Engine `NVIDIA_L4_GPUS` quota = 1.
+
+**What Works:**
+- Local training: `uv run python train_hf_peft.py --dataset_path data/formatted_dataset`
+- Dataset prepared and uploaded to `gs://gamma4-fine-tuning-gemma4-e2b/datasets/gemma4-e2b-v1/`
+- Container built and pushed: `us-central1-docker.pkg.dev/gamma4-fine-tuning/ml-containers/gemma4-train:v1.0.0`
+- Task automation via `tasks.py` (Invoke)
+- Configs: `configs/hf_qlora.yaml` (training), `configs/vertex_job.yaml` (Vertex AI — empty HF_TOKEN removed)
+
+**Stack:** `torch==2.6.0`, `trl`, `peft`, `transformers` (git), `datasets`, `accelerate`, `bitsandbytes`. Package manager: `uv`.
+
+**Paths to Unblock:**
+1. Request Vertex AI L4 quota (2–3 days)
+2. Try T4 on Vertex AI (check `custom_model_training_nvidia_t4_gpus` first)
+3. Run on Compute Engine VM directly (L4 quota available now)
+
+**External Context:**
+- GCP project: `gamma4-fine-tuning`
+- Region: `us-central1`
+- GCS bucket: `gs://gamma4-fine-tuning-gemma4-e2b`
+
+### Repository Structure
+
+- `gemma4-e2b-finetuning/` — Active experiment (scripts, Dockerfile, configs, task runner)
+- `vertex-test-deploy/` — Earlier Vertex AI container test
+- `cloud-infrastructure-setup/`, `cloud-job-orchestration/`, `container-engineering/`, `cloud-storage-artifacts/`, `ml-training-pipeline/` — Reusable skills
+- `data-place/wiki/` — Research knowledge base (11 sources, 7 concepts, 1 entity, SQLite FTS)
+
+### User Preferences
+
+- **"Status" means training readiness**, not git state. Lead with phase, blockers, next step.
+- **Skills must be used** — external skills in `/home/avreymi/code/dotfiles/skills/` take priority.
+- **Never commit unless explicitly asked.**
+
+### Stale / Known Issues
+
+- `gemma4-e2b-finetuning/state/status.md` references deleted Unsloth files — needs cleanup.
+- Unstaged changes exist in `configs/vertex_job.yaml` and `data-place/wiki/` files.
